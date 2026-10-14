@@ -97,6 +97,22 @@ venv\Scripts\activate          # Windows
 pip install -r requirements.txt
 ```
 
+This installs the following packages:
+
+| Package              | Used for                                                  |
+| -------------------- | --------------------------------------------------------- |
+| `fastapi`            | Web framework for the API                                 |
+| `uvicorn[standard]`  | Server that runs the FastAPI app                          |
+| `python-dotenv`      | Loads settings from `backend/.env`                        |
+| `pydantic`           | Request and response validation                           |
+| `python-multipart`   | Handles form data and image uploads (`/facebook/publish-photo`) |
+| `sqlalchemy`         | Database models and queries                               |
+| `psycopg[binary]`    | PostgreSQL driver                                         |
+| `firebase-admin`     | Verifies Firebase login tokens on the server              |
+| `google-genai`       | Google Gemini client                                      |
+| `openai`             | Calls the Mistral model through Hugging Face's OpenAI-compatible API |
+| `requests`           | Sends requests to the Facebook Graph API                  |
+
 In the Firebase Console, go to **Project settings → Service accounts → Generate new private key**. Save the file as `backend/firebase-service-account.json`.
 
 Then create a `backend/.env` file:
