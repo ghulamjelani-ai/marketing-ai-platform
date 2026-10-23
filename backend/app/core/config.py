@@ -24,7 +24,31 @@ class Settings:
         ""
     )
 
-    # Hugging Face - Mistral Text Generation
+    # OpenAI - Chat / marketing plan generation
+    OPENAI_API_KEY: str = os.getenv(
+        "OPENAI_API_KEY",
+        ""
+    )
+
+    # Set the model name in .env (for example OPENAI_MODEL=<model id>)
+    OPENAI_MODEL: str = os.getenv(
+        "OPENAI_MODEL",
+        ""
+    )
+
+    # OpenAI - Image generation (gpt-image-1 was tested with this project's key)
+    OPENAI_IMAGE_MODEL: str = os.getenv(
+        "OPENAI_IMAGE_MODEL",
+        "gpt-image-1"
+    )
+
+    # low, medium or high (higher quality costs more and takes longer)
+    OPENAI_IMAGE_QUALITY: str = os.getenv(
+        "OPENAI_IMAGE_QUALITY",
+        "high"
+    )
+
+    # Hugging Face - Mistral Text Generation (legacy, no longer used for chat)
     HF_TEXT_TOKEN: str = os.getenv(
         "HF_TEXT_TOKEN",
         ""

@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.mistral import generate_marketing_ai_reply
+from app.core.openai_client import generate_marketing_ai_reply
 from app.db.database import get_db
 from app.models.models import Conversation, Message, User
 from app.routers.auth import get_current_db_user
+from app.routers.memory import get_memory_text, update_memory_in_background
 from app.schemas.chat import ChatRequest, ChatResponse, ChatHistoryResponse
 
 router = APIRouter()
 
 
 @router.get("/test")
-def test_mistral():
+def test_chat_model():
     reply = generate_marketing_ai_reply(
         user_message="Test message. Create a short marketing plan for a bakery.",
         business_name="Test Bakery",
@@ -21,7 +22,7 @@ def test_mistral():
 
     return {
         "success": True,
-        "model": settings.HF_TEXT_MODEL,
+        "model": settings.OPENAI_MODEL,
         "reply": reply,
     }
 
@@ -29,6 +30,7 @@ def test_mistral():
 @router.post("/plan", response_model=ChatResponse)
 def generate_marketing_plan(
     data: ChatRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_db_user),
 ):
@@ -59,6 +61,22 @@ def generate_marketing_plan(
         db.commit()
         db.refresh(conversation)
 
+    # Earlier messages give the model context for follow-up questions.
+    previous_messages = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.asc())
+        .all()
+    )
+
+    history = [
+        {
+            "role": "assistant" if message.role == "ai" else "user",
+            "content": message.content,
+        }
+        for message in previous_messages
+    ][-12:]
+
     user_message = Message(
         conversation_id=conversation.id,
         role="user",
@@ -72,6 +90,8 @@ def generate_marketing_plan(
         user_message=data.message,
         business_name=data.business_name or "My Business",
         industry=data.industry,
+        history=history,
+        memory=get_memory_text(db, user.id),
     )
 
     ai_message = Message(
@@ -83,6 +103,9 @@ def generate_marketing_plan(
     db.add(ai_message)
     db.commit()
     db.refresh(conversation)
+
+    # Remember lasting business facts from this message (runs after the reply is sent).
+    background_tasks.add_task(update_memory_in_background, user.id, data.message)
 
     return ChatResponse(
         reply=reply,
@@ -151,3 +174,31 @@ def get_conversations(
             for conversation in conversations
         ],
     }
+
+
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+    conversation = (
+        db.query(Conversation)
+        .filter(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+        )
+        .first()
+    )
+
+    if not conversation:
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation not found"
+        )
+
+    db.delete(conversation)
+    db.commit()
+
+    return {"success": True}
+

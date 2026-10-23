@@ -1,0 +1,129 @@
+/* Automation theme - dashboard (dx-) and auth panel (au-) additions */
+.dx-grid-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.35;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--accent) 14%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(circle at 50% 25%, #000, transparent 75%);
+  -webkit-mask-image: radial-gradient(circle at 50% 25%, #000, transparent 75%);
+  animation: dx-gridmove 20s linear infinite;
+}
+@keyframes dx-gridmove { to { background-position: 52px 52px; } }
+
+.dx-gear { width: 34px; height: 34px; animation: dx-spin 8s linear infinite; flex-shrink: 0; }
+@keyframes dx-spin { to { transform: rotate(360deg); } }
+.dx-live {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--ok-text);
+  border: 1px solid rgba(74,222,128,.3); background: rgba(74,222,128,.08);
+  padding: 0.35rem 0.8rem; border-radius: 999px; white-space: nowrap;
+}
+
+/* pipeline */
+.dx-flow { position: relative; overflow: hidden; }
+.dx-flow::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 50% 0%, rgba(156,42,59,.25), transparent 60%);
+}
+.dx-nodes { position: relative; display: flex; align-items: center; justify-content: space-between; }
+.dx-node { position: relative; z-index: 2; width: 130px; text-align: center; flex-shrink: 0; }
+.dx-node-ic {
+  position: relative; width: 66px; height: 66px; margin: 0 auto 10px; border-radius: 18px;
+  display: grid; place-items: center; font-size: 26px;
+  background: var(--card2); border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+  animation: dx-nodestate 10s infinite; animation-delay: var(--d);
+}
+.dx-node-ic::after {
+  content: "\2713"; position: absolute; right: -6px; top: -6px; width: 20px; height: 20px; border-radius: 50%;
+  background: #4ade80; color: #052e16; font-size: 12px; font-weight: 800; display: grid; place-items: center;
+  opacity: 0; animation: dx-tick 10s infinite; animation-delay: var(--d);
+}
+.dx-ring {
+  position: absolute; left: 50%; top: 0; width: 66px; height: 66px; margin-left: -33px; border-radius: 18px;
+  border: 2px solid transparent; border-top-color: var(--accent); opacity: 0;
+  animation: dx-ringspin 10s infinite; animation-delay: var(--d);
+}
+@keyframes dx-nodestate {
+  0% { border-color: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: none; transform: scale(1); }
+  4%, 18% { border-color: var(--accent); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent), 0 0 36px color-mix(in srgb, var(--accent) 35%, transparent); transform: scale(1.08); }
+  22%, 100% { border-color: rgba(74,222,128,.55); box-shadow: 0 0 18px rgba(74,222,128,.15); transform: scale(1); }
+}
+@keyframes dx-tick { 0%, 20% { opacity: 0; transform: scale(.3); } 25%, 100% { opacity: 1; transform: scale(1); } }
+@keyframes dx-ringspin { 0% { opacity: 0; transform: rotate(0); } 2% { opacity: 1; } 18% { opacity: 1; transform: rotate(720deg); } 20%, 100% { opacity: 0; } }
+.dx-node b { display: block; font-size: 0.85rem; color: var(--text); }
+.dx-node small { color: color-mix(in srgb, var(--text) 50%, transparent); font-size: 0.72rem; }
+
+.dx-link {
+  position: relative; flex: 1; height: 2px; z-index: 1; margin-bottom: 40px; min-width: 20px;
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--accent) 50%, transparent) 50%, transparent 50%);
+  background-size: 14px 2px; animation: dx-dash 1s linear infinite;
+}
+@keyframes dx-dash { to { background-position: 14px 0; } }
+.dx-packet {
+  position: absolute; top: -4px; left: 0; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 14px var(--accent); animation: dx-travel 2s linear infinite; animation-delay: var(--pd);
+}
+@keyframes dx-travel { from { left: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } to { left: calc(100% - 10px); opacity: 0; } }
+
+/* live feed */
+.dx-feed {
+  font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; height: 190px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 7px;
+  mask-image: linear-gradient(transparent, #000 30%); -webkit-mask-image: linear-gradient(transparent, #000 30%);
+}
+.dx-feed-row { display: flex; gap: 10px; animation: dx-msg-in .4s both; }
+.dx-feed-t { color: color-mix(in srgb, var(--text) 35%, transparent); }
+.dx-feed-ok { color: #4ade80; }
+.dx-feed-run { color: var(--accent); }
+.dx-bar { height: 6px; background: color-mix(in srgb, var(--text) 8%, transparent); border-radius: 6px; margin-top: 14px; overflow: hidden; }
+.dx-bar i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #9c2a3b, var(--accent)); animation: dx-prog 6s ease-in-out infinite; }
+@keyframes dx-prog { 0% { width: 8%; } 80%, 100% { width: 100%; } }
+
+/* stats */
+.dx-stat-n { font-family: Georgia, serif; font-size: 1.7rem; color: var(--text); line-height: 1.15; }
+.dx-stat-l { font-size: 0.75rem; color: color-mix(in srgb, var(--text) 50%, transparent); margin-top: 4px; }
+.dx-spark { position: absolute; right: 0; bottom: 0; width: 90px; height: 36px; opacity: .85; }
+.dx-spark path { stroke-dasharray: 260; stroke-dashoffset: 260; animation: dx-draw 3s ease-out infinite; }
+@keyframes dx-draw { 0% { stroke-dashoffset: 260; } 60%, 100% { stroke-dashoffset: 0; } }
+
+/* chat working steps */
+.dx-steps { display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; }
+.dx-step { display: flex; align-items: center; gap: 8px; opacity: 0; animation: dx-stepin .4s forwards; animation-delay: var(--sd); }
+.dx-step-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: dx-spin .8s linear infinite; }
+@keyframes dx-stepin { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 860px) {
+  .dx-nodes { flex-direction: column; gap: 6px; }
+  .dx-link { width: 2px; height: 30px; flex: none; margin: 0; min-width: 0;
+    background-image: linear-gradient(180deg, color-mix(in srgb, var(--accent) 50%, transparent) 50%, transparent 50%); background-size: 2px 14px; }
+  .dx-packet { display: none; }
+}
+
+/* ===== auth: automation orbit (left panel) ===== */
+.au-orbit { position: absolute; left: 50%; top: 38%; width: 240px; height: 240px; margin: -120px 0 0 -120px; z-index: 2; }
+.au-core {
+  position: absolute; inset: 82px; border-radius: 50%; display: grid; place-items: center; font-size: 32px;
+  background: radial-gradient(circle, #9c2a3b, #7b1e2b); box-shadow: 0 0 50px rgba(156,42,59,.8);
+  animation: au-core 3s ease-in-out infinite;
+}
+.au-path { position: absolute; inset: 0; border: 1px dashed rgba(214,185,140,.3); border-radius: 50%; animation: au-spin 18s linear infinite; }
+.au-path-2 { inset: 40px; animation-duration: 12s; animation-direction: reverse; }
+.au-sat {
+  position: absolute; left: 50%; top: -17px; margin-left: -17px; width: 34px; height: 34px; border-radius: 10px;
+  display: grid; place-items: center; background: #231318; border: 1px solid #d6b98c; font-size: 16px;
+}
+.au-sat-b { top: auto; bottom: -17px; }
+.au-sat > span { display: block; animation: au-spin 18s linear infinite reverse; }
+.au-path-2 .au-sat > span { animation: au-spin 12s linear infinite; }
+.au-chips { position: absolute; left: 0; right: 0; bottom: 10.5rem; z-index: 2; display: flex; justify-content: center; gap: .5rem; flex-wrap: wrap; padding: 0 1rem; }
+.au-chip { font-size: .66rem; letter-spacing: .12em; color: #d6b98c; border: 1px solid rgba(214,185,140,.3); border-radius: 999px; padding: .25rem .65rem; background: rgba(20,9,12,.4); }
+@keyframes au-spin { to { transform: rotate(360deg); } }
+@keyframes au-core { 50% { transform: scale(1.1); } }
+@media (max-width: 860px) { .au-orbit, .au-chips { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .dx-grid-bg, .dx-gear, .dx-node-ic, .dx-node-ic::after, .dx-ring, .dx-link, .dx-packet, .dx-bar i, .dx-spark path, .dx-feed-row,
+  .au-core, .au-path, .au-sat > span { animation: none; }
+  .dx-step { animation: none; opacity: 1; }
+  .dx-node-ic::after { opacity: 1; }
+}

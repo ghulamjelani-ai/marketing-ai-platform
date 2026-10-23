@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import "../dashboard.css";
 import Navbar from "../components/Navbar";
+import Confetti from "../components/Confetti";
+import useSpotlight from "../hooks/useSpotlight";
 import ChatBox from "../components/ChatBox";
+import AutoPoster from "../components/AutoPoster";
+import Autopilot from "../components/Autopilot";
+import ActivityPanel from "../components/ActivityPanel";
+import {
+  AutomationPipeline,
+  WorkflowFeed,
+  StatCard,
+} from "../components/AutomationFlow";
 
 import { useAuth } from "../context/AuthContext";
 
@@ -12,9 +23,46 @@ import {
   publishFacebookPhoto,
   publishFacebookPost,
 } from "../api/facebook";
+import { generateImage } from "../api/images";
+import { getPublishedPosts, getScheduled } from "../api/activity";
+
+import "../polish.css";
+
+const HEADLINE = [
+  { text: "Create" },
+  { text: "Marketing" },
+  { text: "Plans" },
+  { text: "&" },
+  { text: "Social", gold: true },
+  { text: "Posts", gold: true },
+  { text: "for" },
+  { text: "Your" },
+  { text: "Business" },
+];
+
+// Loads the published-post history and the scheduled posts. Returns null on failure.
+async function fetchActivity() {
+  try {
+    // Scheduled posts first: that call records posts that went live since the last visit.
+    const scheduled = await getScheduled();
+    const published = await getPublishedPosts();
+
+    return {
+      posts: published.posts,
+      total: published.total,
+      upcoming: scheduled.upcoming,
+      past: scheduled.past,
+    };
+  } catch (error) {
+    console.error("Activity load error:", error);
+    return null;
+  }
+}
 
 export default function Home() {
   const { user } = useAuth();
+
+  useSpotlight();
 
   const fileInputRef = useRef(null);
 
@@ -32,9 +80,45 @@ export default function Home() {
 
   const [postText, setPostText] = useState("");
 
+  const [imagePrompt, setImagePrompt] = useState("");
+
+  const [generatingImage, setGeneratingImage] = useState(false);
+
   const [selectedImage, setSelectedImage] = useState(null);
 
   const [imagePreview, setImagePreview] = useState("");
+
+  const [publishedCount, setPublishedCount] = useState(0);
+
+  // History of published posts and the scheduled posts, loaded from the backend.
+  const [activity, setActivity] = useState({
+    posts: [],
+    total: 0,
+    upcoming: [],
+    past: [],
+  });
+
+  const refreshActivity = useCallback(async () => {
+    const data = await fetchActivity();
+
+    if (data) {
+      setActivity(data);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchActivity().then((data) => {
+      if (data && !cancelled) {
+        setActivity(data);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [message, setMessage] = useState("");
 
@@ -181,6 +265,77 @@ export default function Home() {
   }
 
   // =======================================================
+  // CHAT ASSISTANT HELPERS
+  // =======================================================
+
+  function scrollToPublisher() {
+    document
+      .getElementById("facebook-publisher")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function handleUsePost(text) {
+    setPostText(text);
+
+    setMessage("Post text added to the publisher. Review it, then continue.");
+    setMessageType("success");
+
+    scrollToPublisher();
+  }
+
+  // =======================================================
+  // GENERATE IMAGE WITH AI
+  // =======================================================
+
+  async function handleGenerateImage(promptOverride) {
+    // The chat assistant passes the prompt as text; the button passes a click event.
+    const fromChat = typeof promptOverride === "string";
+    const prompt = (fromChat ? promptOverride : imagePrompt).trim();
+
+    if (!prompt) {
+      setMessage("Describe the image you want the AI to create.");
+
+      setMessageType("error");
+
+      return;
+    }
+
+    try {
+      setGeneratingImage(true);
+
+      setMessage("");
+      setMessageType("");
+
+      if (fromChat) {
+        setImagePrompt(prompt);
+      }
+
+      const file = await generateImage(prompt);
+
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+
+      setSelectedImage(file);
+      setImagePreview(URL.createObjectURL(file));
+
+      setMessage("Image generated. Review it below, then publish it.");
+
+      setMessageType("success");
+
+      if (fromChat) {
+        scrollToPublisher();
+      }
+    } catch (error) {
+      setMessage(error.message || "Image generation failed.");
+
+      setMessageType("error");
+    } finally {
+      setGeneratingImage(false);
+    }
+  }
+
+  // =======================================================
   // PUBLISH FACEBOOK POST
   // =======================================================
 
@@ -218,6 +373,10 @@ export default function Home() {
       }
 
       setMessageType("success");
+
+      setPublishedCount((count) => count + 1);
+
+      refreshActivity();
 
       setPostText("");
 
@@ -264,41 +423,95 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-beige">
+    <div className="dx-page">
+      <div className="dx-grid-bg" />
+      <div className="dx-cursor" />
+      <Confetti burst={publishedCount} />
+      <span className="dx-bg-orb dx-bg-orb-1" />
+      <span className="dx-bg-orb dx-bg-orb-2" />
+
       <Navbar />
 
-      <main className="max-w-7xl mx-auto px-5 py-8">
-        <section className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 items-stretch">
+      <main className="dx-main max-w-7xl mx-auto px-5 py-8">
+        <AutomationPipeline />
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-8">
+          <StatCard
+            value={checkingFacebook ? "…" : facebookConnected ? "Connected" : "Not connected"}
+            label="Facebook Page"
+            color={facebookConnected ? "#4ade80" : "var(--accent)"}
+            path="M0 30 L25 28 L45 18 L70 22 L110 6"
+            delay="dx-d1"
+          />
+          <StatCard
+            value={activity.total}
+            label="Posts published"
+            path="M0 40 L30 28 L50 32 L75 14 L110 6"
+            delay="dx-d2"
+          />
+          <StatCard
+            value={activity.upcoming.length}
+            label="Posts scheduled"
+            color="#4ade80"
+            path="M0 34 L25 36 L45 20 L70 24 L110 8"
+            delay="dx-d3"
+          />
+          <StatCard
+            value="24/7"
+            label="AI assistant availability"
+            path="M0 20 L40 18 L70 12 L110 8"
+            delay="dx-d4"
+          />
+        </div>
+
+        <Autopilot
+          facebookConnected={facebookConnected}
+          pageName={facebookPageName}
+          onDone={(kind) => {
+            if (kind === "published") {
+              setPublishedCount((count) => count + 1);
+            }
+
+            refreshActivity();
+          }}
+        />
+
+        <section className="grid lg:grid-cols-[1.1fr_0.9fr] gap-8 items-stretch mt-8">
           <div>
             {/* =================================================
                 HERO
             ================================================= */}
 
-            <div className="classic-card rounded-3xl p-8 mb-8">
-              <p className="text-sm uppercase tracking-[0.3em] text-mehroon">
-                AI Powered Marketing
-              </p>
+            <div className="dx-card dx-hero dx-rise rounded-3xl p-8 mb-8">
+              <p className="dx-eyebrow">AI Powered Marketing</p>
 
-              <h1 className="font-classic text-4xl md:text-6xl font-bold text-mehroonDark mt-4 leading-tight">
-                Create Marketing Plans & Social Posts for Your Business
+              <h1 className="dx-h1 text-4xl md:text-6xl mt-4" aria-label="Create Marketing Plans and Social Posts for Your Business">
+                {HEADLINE.map((word, i) => (
+                  <span key={i} aria-hidden="true">
+                    <span
+                      className={`dx-word ${word.gold ? "dx-gold-text" : ""}`}
+                      style={{ "--i": i }}
+                    >
+                      {word.text}
+                    </span>{" "}
+                  </span>
+                ))}
               </h1>
 
-              <p className="text-mehroonDark/70 mt-5 text-lg max-w-2xl">
+              <p className="dx-muted mt-5 text-lg max-w-2xl">
                 Welcome {user?.name}. Chat with our AI, create your marketing
                 plan, generate social content, and publish directly to your
                 connected Facebook Page.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-4">
-                <button className="rounded-full bg-mehroon px-7 py-3 text-beige font-semibold hover:bg-mehroonDark transition">
-                  Start Marketing Plan
-                </button>
+                <button className="dx-btn">Start Marketing Plan</button>
 
                 {!facebookConnected ? (
                   <button
                     onClick={handleFacebookConnect}
                     disabled={connecting || checkingFacebook}
-                    className="rounded-full border border-mehroon/30 px-7 py-3 text-mehroon font-semibold hover:bg-mehroon hover:text-beige transition disabled:opacity-60"
+                    className="dx-btn-ghost"
                   >
                     {checkingFacebook
                       ? "Checking Facebook..."
@@ -308,12 +521,10 @@ export default function Home() {
                   </button>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <div className="rounded-full bg-green-50 border border-green-200 px-5 py-3">
-                      <p className="text-xs text-green-700">
-                        Facebook Connected
-                      </p>
+                    <div className="dx-badge-ok px-5 py-2">
+                      <p className="text-xs opacity-80">Facebook Connected</p>
 
-                      <p className="text-sm font-semibold text-green-900">
+                      <p className="text-sm font-semibold">
                         {facebookPageName || "Facebook Page"}
                       </p>
                     </div>
@@ -321,7 +532,7 @@ export default function Home() {
                     <button
                       onClick={handleDisconnect}
                       disabled={disconnecting}
-                      className="rounded-full border border-mehroon/30 px-5 py-3 text-mehroon font-semibold hover:bg-mehroon hover:text-beige transition disabled:opacity-60"
+                      className="dx-btn-ghost"
                     >
                       {disconnecting ? "Disconnecting..." : "Disconnect"}
                     </button>
@@ -336,12 +547,12 @@ export default function Home() {
 
             {message && (
               <div
-                className={`rounded-2xl p-4 mb-8 border ${
+                className={`dx-alert ${
                   messageType === "success"
-                    ? "bg-green-50 border-green-200 text-green-800"
+                    ? "dx-alert-success"
                     : messageType === "error"
-                      ? "bg-red-50 border-red-200 text-red-800"
-                      : "classic-card text-mehroonDark"
+                      ? "dx-alert-error"
+                      : "dx-alert-info"
                 }`}
               >
                 <p className="text-sm font-medium">{message}</p>
@@ -353,26 +564,27 @@ export default function Home() {
             ================================================= */}
 
             {facebookConnected && (
-              <div className="classic-card rounded-3xl p-7 mb-8">
+              <div
+                id="facebook-publisher"
+                className="dx-card dx-rise rounded-3xl p-7 mb-8"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <p className="text-sm uppercase tracking-[0.2em] text-mehroon">
-                      Facebook Publisher
-                    </p>
+                    <p className="dx-eyebrow">Facebook Publisher</p>
 
-                    <h2 className="font-classic text-3xl font-bold text-mehroonDark mt-2">
+                    <h2 className="dx-title text-3xl mt-2">
                       Create Your Facebook Post
                     </h2>
 
-                    <p className="mt-2 text-sm text-mehroonDark/60">
+                    <p className="mt-2 text-sm dx-faint">
                       Publishing to{" "}
-                      <span className="font-semibold text-mehroonDark">
+                      <span className="font-semibold dx-strong">
                         {facebookPageName || "your connected Page"}
                       </span>
                     </p>
                   </div>
 
-                  <div className="rounded-full bg-green-50 border border-green-200 px-4 py-2 text-sm font-semibold text-green-700">
+                  <div className="dx-badge-ok px-4 py-2 text-sm font-semibold">
                     ✓ Connected
                   </div>
                 </div>
@@ -382,7 +594,7 @@ export default function Home() {
                 ============================================= */}
 
                 <div className="mt-7">
-                  <label className="block text-sm font-semibold text-mehroonDark mb-2">
+                  <label className="dx-label block text-sm mb-2">
                     Post Caption
                   </label>
 
@@ -392,11 +604,11 @@ export default function Home() {
                     rows={7}
                     maxLength={5000}
                     placeholder="Write your Facebook post here..."
-                    className="w-full resize-y rounded-2xl border border-mehroon/20 bg-white px-5 py-4 text-mehroonDark outline-none transition focus:border-mehroon focus:ring-2 focus:ring-mehroon/10"
+                    className="dx-input resize-y"
                   />
 
                   <div className="mt-2 flex justify-end">
-                    <span className="text-xs text-mehroonDark/45">
+                    <span className="text-xs dx-faint">
                       {postText.length} characters
                     </span>
                   </div>
@@ -407,26 +619,54 @@ export default function Home() {
                 ============================================= */}
 
                 <div className="mt-6">
-                  <label className="block text-sm font-semibold text-mehroonDark mb-2">
+                  <label className="dx-label block text-sm mb-2">
+                    Generate Image with AI
+                  </label>
+
+                  <div className="flex flex-wrap gap-3">
+                    <input
+                      value={imagePrompt}
+                      onChange={(event) => setImagePrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !generatingImage) {
+                          handleGenerateImage();
+                        }
+                      }}
+                      maxLength={1000}
+                      placeholder="Example: fresh sourdough bread on a rustic table, warm light"
+                      className="dx-input flex-1 min-w-[220px]"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleGenerateImage}
+                      disabled={generatingImage || publishing}
+                      className="dx-btn"
+                    >
+                      {generatingImage ? "Generating..." : "Generate Image"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <label className="dx-label block text-sm mb-2">
                     Upload Photo
                   </label>
 
                   {!imagePreview ? (
-                    <label className="flex cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-mehroon/20 bg-white px-6 py-10 text-center transition hover:border-mehroon/50 hover:bg-mehroon/[0.02]">
+                    <label className="dx-drop">
                       <div>
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-mehroon/10 text-xl text-mehroon">
-                          +
-                        </div>
+                        <div className="dx-plus">+</div>
 
-                        <p className="mt-4 font-semibold text-mehroon">
+                        <p className="mt-4 font-semibold dx-accent-text">
                           Choose Photo From Computer
                         </p>
 
-                        <p className="mt-1 text-xs text-mehroonDark/50">
+                        <p className="mt-1 text-xs dx-faint">
                           JPG, JPEG, PNG, WEBP or another image format
                         </p>
 
-                        <p className="mt-1 text-xs text-mehroonDark/40">
+                        <p className="mt-1 text-xs dx-faint">
                           Maximum file size: 15 MB
                         </p>
                       </div>
@@ -440,8 +680,8 @@ export default function Home() {
                       />
                     </label>
                   ) : (
-                    <div className="overflow-hidden rounded-2xl border border-mehroon/15 bg-white">
-                      <div className="bg-[#f8f5ef] p-4">
+                    <div className="dx-preview">
+                      <div className="dx-preview-bg">
                         <img
                           src={imagePreview}
                           alt="Facebook post preview"
@@ -449,25 +689,12 @@ export default function Home() {
                         />
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between gap-4 p-4">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-mehroonDark">
-                            {selectedImage?.name}
-                          </p>
-
-                          <p className="mt-1 text-xs text-mehroonDark/50">
-                            {selectedImage
-                              ? (selectedImage.size / 1024 / 1024).toFixed(2)
-                              : "0.00"}{" "}
-                            MB
-                          </p>
-                        </div>
-
+                      <div className="flex flex-wrap items-center justify-end gap-4 p-4">
                         <button
                           type="button"
                           onClick={removeSelectedImage}
                           disabled={publishing}
-                          className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                          className="dx-btn-danger"
                         >
                           Remove Photo
                         </button>
@@ -484,7 +711,7 @@ export default function Home() {
                   <button
                     onClick={handlePublish}
                     disabled={publishing}
-                    className="rounded-full bg-mehroon px-8 py-3.5 text-beige font-semibold transition hover:bg-mehroonDark disabled:cursor-not-allowed disabled:opacity-60"
+                    className="dx-btn"
                   >
                     {publishing
                       ? "Publishing..."
@@ -493,7 +720,7 @@ export default function Home() {
                         : "Post to Facebook"}
                   </button>
 
-                  <p className="text-xs text-mehroonDark/50">
+                  <p className="text-xs dx-faint">
                     {selectedImage
                       ? "Your photo and caption will be published together."
                       : "Add a photo if you want to publish an image post."}
@@ -502,39 +729,38 @@ export default function Home() {
               </div>
             )}
 
+            <WorkflowFeed />
+
             {/* =================================================
                 FEATURE CARDS
             ================================================= */}
 
             <div className="grid md:grid-cols-3 gap-5">
-              <div className="classic-card rounded-2xl p-5">
-                <h3 className="font-classic text-xl font-bold text-mehroonDark">
-                  AI Strategy
-                </h3>
+              <div className="dx-card dx-hover dx-tilt dx-rise dx-d2 rounded-2xl p-5">
+                <div className="dx-feature-icon">🎯</div>
+                <h3 className="dx-title text-xl">AI Strategy</h3>
 
-                <p className="text-sm text-mehroonDark/65 mt-2">
+                <p className="text-sm dx-muted mt-2">
                   AI understands your business and creates a practical marketing
                   direction.
                 </p>
               </div>
 
-              <div className="classic-card rounded-2xl p-5">
-                <h3 className="font-classic text-xl font-bold text-mehroonDark">
-                  Post Ideas
-                </h3>
+              <div className="dx-card dx-hover dx-tilt dx-rise dx-d3 rounded-2xl p-5">
+                <div className="dx-feature-icon">✨</div>
+                <h3 className="dx-title text-xl">Post Ideas</h3>
 
-                <p className="text-sm text-mehroonDark/65 mt-2">
+                <p className="text-sm dx-muted mt-2">
                   Generate captions, questions, hooks, and content plans for
                   social media.
                 </p>
               </div>
 
-              <div className="classic-card rounded-2xl p-5">
-                <h3 className="font-classic text-xl font-bold text-mehroonDark">
-                  Facebook Sharing
-                </h3>
+              <div className="dx-card dx-hover dx-tilt dx-rise dx-d4 rounded-2xl p-5">
+                <div className="dx-feature-icon">🚀</div>
+                <h3 className="dx-title text-xl">Facebook Sharing</h3>
 
-                <p className="text-sm text-mehroonDark/65 mt-2">
+                <p className="text-sm dx-muted mt-2">
                   Connect your Facebook Page, upload photos, and publish
                   directly from your dashboard.
                 </p>
@@ -546,8 +772,33 @@ export default function Home() {
               AI CHAT
           =================================================== */}
 
-          <ChatBox />
+          <ChatBox
+            assistant={{
+              facebookConnected,
+              pageName: facebookPageName,
+              postText,
+              hasImage: Boolean(selectedImage),
+              generatingImage,
+              publishing,
+              message,
+              messageType,
+              publishedCount,
+              onUsePost: handleUsePost,
+              onGenerateImage: handleGenerateImage,
+              onPublish: handlePublish,
+            }}
+          />
         </section>
+
+        <AutoPoster
+          facebookConnected={facebookConnected}
+          pageName={facebookPageName}
+          upcoming={activity.upcoming}
+          past={activity.past}
+          onChanged={refreshActivity}
+        />
+
+        <ActivityPanel posts={activity.posts} total={activity.total} />
       </main>
     </div>
   );

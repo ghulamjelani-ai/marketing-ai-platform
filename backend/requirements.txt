@@ -14,7 +14,7 @@ firebase-admin
 # Google Gemini
 google-genai
 
-# Hugging Face (Mistral via OpenAI-compatible API)
+# OpenAI (chat) and OpenAI-compatible client
 openai
 
 # Facebook Graph API

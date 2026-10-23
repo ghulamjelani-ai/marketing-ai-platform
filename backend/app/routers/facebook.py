@@ -1,10 +1,16 @@
+import base64
+import hashlib
+import hmac
 import os
+import time
+import uuid
 from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     UploadFile,
     File,
@@ -12,6 +18,14 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.core import facebook_api
+from app.core.facebook_api import FacebookError
+from app.core.secure import decrypt_text, encrypt_text
+from app.db.database import get_db
+from app.models.models import FacebookConnection, PublishedPost, User
+from app.routers.auth import get_current_db_user
 
 load_dotenv()
 
@@ -35,7 +49,7 @@ FRONTEND_URL = os.getenv(
     "http://localhost:5173",
 )
 
-FACEBOOK_GRAPH_VERSION = "v23.0"
+FACEBOOK_GRAPH_VERSION = facebook_api.GRAPH_VERSION
 
 FACEBOOK_REDIRECT_URI = (
     f"{BACKEND_URL}/facebook/callback"
@@ -47,24 +61,126 @@ FACEBOOK_PERMISSIONS = [
     "pages_manage_posts",
 ]
 
+STATE_MAX_AGE_SECONDS = 15 * 60
+
 
 # =========================================================
-# TEMPORARY FACEBOOK CONNECTION STORAGE
+# SIGNED "state" VALUE
 # =========================================================
 #
-# FIRST TEST VERSION ONLY.
-#
-# Later:
-# Save these details per Firebase user in PostgreSQL.
+# Facebook sends the browser back to /facebook/callback without
+# any login header, so the user identity travels in a signed
+# state value that only this backend can create.
 #
 # =========================================================
 
-facebook_connection = {
-    "connected": False,
-    "page_id": None,
-    "page_name": None,
-    "page_access_token": None,
-}
+def _state_key() -> bytes:
+    if not FACEBOOK_APP_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="FACEBOOK_APP_SECRET is missing",
+        )
+
+    return FACEBOOK_APP_SECRET.encode()
+
+
+def make_state(user_id: uuid.UUID) -> str:
+    payload = f"{user_id}.{int(time.time())}"
+
+    signature = hmac.new(
+        _state_key(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    raw = f"{payload}.{signature}"
+
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def read_state(state: str | None) -> uuid.UUID | None:
+    if not state:
+        return None
+
+    try:
+        raw = base64.urlsafe_b64decode(state.encode()).decode()
+        user_id, issued_at, signature = raw.rsplit(".", 2)
+
+        expected = hmac.new(
+            _state_key(),
+            f"{user_id}.{issued_at}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature, expected):
+            return None
+
+        if time.time() - int(issued_at) > STATE_MAX_AGE_SECONDS:
+            return None
+
+        return uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        return None
+
+
+# =========================================================
+# HELPERS SHARED WITH THE SCHEDULER
+# =========================================================
+
+def get_user_connection(db: Session, user_id: uuid.UUID):
+    """Returns (connection row, page access token) or (None, None)."""
+
+    row = (
+        db.query(FacebookConnection)
+        .filter(FacebookConnection.user_id == user_id)
+        .first()
+    )
+
+    if not row:
+        return None, None
+
+    token = decrypt_text(row.token_encrypted)
+
+    return row, token
+
+
+def require_connection(db: Session, user: User):
+    row, token = get_user_connection(db, user.id)
+
+    if not row or not token:
+        raise HTTPException(
+            status_code=400,
+            detail="Facebook Page is not connected",
+        )
+
+    return row, token
+
+
+def record_published_post(
+    db: Session,
+    user_id: uuid.UUID,
+    message: str,
+    with_image: bool,
+    facebook_post_id: str | None,
+    source: str = "manual",
+):
+    db.add(
+        PublishedPost(
+            user_id=user_id,
+            source=source,
+            message=message,
+            with_image=with_image,
+            facebook_post_id=facebook_post_id,
+        )
+    )
+    db.commit()
+
+
+def raise_http(error: FacebookError):
+    raise HTTPException(
+        status_code=error.status,
+        detail=error.detail,
+    )
 
 
 # =========================================================
@@ -80,7 +196,9 @@ class FacebookPostRequest(BaseModel):
 # =========================================================
 
 @router.get("/connect-url")
-def get_facebook_connect_url():
+def get_facebook_connect_url(
+    user: User = Depends(get_current_db_user),
+):
 
     if not FACEBOOK_APP_ID:
         raise HTTPException(
@@ -93,6 +211,7 @@ def get_facebook_connect_url():
         "redirect_uri": FACEBOOK_REDIRECT_URI,
         "scope": ",".join(FACEBOOK_PERMISSIONS),
         "response_type": "code",
+        "state": make_state(user.id),
     }
 
     connect_url = (
@@ -114,12 +233,21 @@ def get_facebook_connect_url():
 @router.get("/callback")
 def facebook_callback(
     code: str | None = None,
+    state: str | None = None,
     error: str | None = None,
+    db: Session = Depends(get_db),
 ):
 
     if error:
         return RedirectResponse(
-            url=f"{FRONTEND_URL}/?facebook=error"
+            url=f"{FRONTEND_URL}/home?facebook=error"
+        )
+
+    user_id = read_state(state)
+
+    if not user_id:
+        return RedirectResponse(
+            url=f"{FRONTEND_URL}/home?facebook=error"
         )
 
     if not code:
@@ -250,14 +378,8 @@ def facebook_callback(
             ),
         )
 
-    # =====================================================
-    # FIRST TEST VERSION
-    #
-    # CONNECT FIRST AVAILABLE FACEBOOK PAGE
-    #
-    # Later we can build page selection UI
-    # if user manages multiple pages.
-    # =====================================================
+    # The first available Page is connected.
+    # A Page selection step can be added for accounts with many Pages.
 
     page = pages[0]
 
@@ -279,25 +401,35 @@ def facebook_callback(
             detail="Facebook Page access token is missing",
         )
 
-    facebook_connection["connected"] = True
-    facebook_connection["page_id"] = page_id
-    facebook_connection["page_name"] = page_name
-    facebook_connection[
-        "page_access_token"
-    ] = page_access_token
+    # =====================================================
+    # SAVE THE CONNECTION FOR THIS USER (TOKEN ENCRYPTED)
+    # =====================================================
 
-    print("========================================")
-    print("FACEBOOK PAGE CONNECTED")
-    print("Page ID:", page_id)
-    print("Page Name:", page_name)
-    print(
-        "Page Token Received:",
-        bool(page_access_token),
+    row = (
+        db.query(FacebookConnection)
+        .filter(FacebookConnection.user_id == user_id)
+        .first()
     )
-    print("========================================")
+
+    if row is None:
+        row = FacebookConnection(
+            user_id=user_id,
+            page_id=page_id,
+            page_name=page_name,
+            token_encrypted=encrypt_text(page_access_token),
+        )
+        db.add(row)
+    else:
+        row.page_id = page_id
+        row.page_name = page_name
+        row.token_encrypted = encrypt_text(page_access_token)
+
+    db.commit()
+
+    print("FACEBOOK PAGE CONNECTED:", page_name, page_id)
 
     return RedirectResponse(
-        url=f"{FRONTEND_URL}/?facebook=connected"
+        url=f"{FRONTEND_URL}/home?facebook=connected"
     )
 
 
@@ -306,19 +438,20 @@ def facebook_callback(
 # =========================================================
 
 @router.get("/status")
-def facebook_status():
+def facebook_status(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+
+    row, token = get_user_connection(db, user.id)
+
+    connected = bool(row and token)
 
     return {
         "success": True,
-        "connected": facebook_connection[
-            "connected"
-        ],
-        "page_id": facebook_connection[
-            "page_id"
-        ],
-        "page_name": facebook_connection[
-            "page_name"
-        ],
+        "connected": connected,
+        "page_id": row.page_id if connected else None,
+        "page_name": row.page_name if connected else None,
     }
 
 
@@ -329,23 +462,11 @@ def facebook_status():
 @router.post("/publish")
 def publish_to_facebook(
     payload: FacebookPostRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
 ):
 
-    if not facebook_connection[
-        "connected"
-    ]:
-        raise HTTPException(
-            status_code=400,
-            detail="Facebook Page is not connected",
-        )
-
-    page_id = facebook_connection[
-        "page_id"
-    ]
-
-    page_access_token = facebook_connection[
-        "page_access_token"
-    ]
+    row, token = require_connection(db, user)
 
     message = payload.message.strip()
 
@@ -355,43 +476,22 @@ def publish_to_facebook(
             detail="Post message cannot be empty",
         )
 
-    post_url = (
-        f"https://graph.facebook.com/"
-        f"{FACEBOOK_GRAPH_VERSION}/"
-        f"{page_id}/feed"
+    try:
+        result = facebook_api.publish_text(
+            row.page_id,
+            token,
+            message,
+        )
+    except FacebookError as error:
+        raise_http(error)
+
+    record_published_post(
+        db,
+        user.id,
+        message,
+        False,
+        result.get("id"),
     )
-
-    try:
-        response = requests.post(
-            post_url,
-            data={
-                "message": message,
-                "access_token": page_access_token,
-            },
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Facebook publishing request failed: {str(exc)}",
-        )
-
-    try:
-        result = response.json()
-    except ValueError:
-        raise HTTPException(
-            status_code=502,
-            detail="Invalid response received from Facebook",
-        )
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "Facebook publishing failed",
-                "facebook_response": result,
-            },
-        )
 
     return {
         "success": True,
@@ -408,23 +508,11 @@ def publish_to_facebook(
 async def publish_photo_to_facebook(
     message: str = Form(""),
     image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
 ):
 
-    if not facebook_connection[
-        "connected"
-    ]:
-        raise HTTPException(
-            status_code=400,
-            detail="Facebook Page is not connected",
-        )
-
-    page_id = facebook_connection[
-        "page_id"
-    ]
-
-    page_access_token = facebook_connection[
-        "page_access_token"
-    ]
+    row, token = require_connection(db, user)
 
     # =====================================================
     # VALIDATE IMAGE
@@ -461,61 +549,25 @@ async def publish_photo_to_facebook(
             detail="Image is too large. Maximum size is 15 MB.",
         )
 
-    # =====================================================
-    # FACEBOOK PHOTOS ENDPOINT
-    # =====================================================
-
-    photo_url = (
-        f"https://graph.facebook.com/"
-        f"{FACEBOOK_GRAPH_VERSION}/"
-        f"{page_id}/photos"
-    )
-
-    files = {
-        "source": (
-            image.filename or "facebook-image.jpg",
+    try:
+        result = facebook_api.publish_photo(
+            row.page_id,
+            token,
             image_bytes,
+            image.filename or "facebook-image.jpg",
             image.content_type,
+            message,
         )
-    }
+    except FacebookError as error:
+        raise_http(error)
 
-    data = {
-        "access_token": page_access_token,
-        "published": "true",
-    }
-
-    if message.strip():
-        data["caption"] = message.strip()
-
-    try:
-        response = requests.post(
-            photo_url,
-            data=data,
-            files=files,
-            timeout=60,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Facebook photo upload failed: {str(exc)}",
-        )
-
-    try:
-        result = response.json()
-    except ValueError:
-        raise HTTPException(
-            status_code=502,
-            detail="Invalid photo response from Facebook",
-        )
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "message": "Facebook photo publishing failed",
-                "facebook_response": result,
-            },
-        )
+    record_published_post(
+        db,
+        user.id,
+        message.strip(),
+        True,
+        result.get("post_id") or result.get("id"),
+    )
 
     return {
         "success": True,
@@ -530,14 +582,15 @@ async def publish_photo_to_facebook(
 # =========================================================
 
 @router.post("/disconnect")
-def disconnect_facebook():
+def disconnect_facebook(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
 
-    facebook_connection["connected"] = False
-    facebook_connection["page_id"] = None
-    facebook_connection["page_name"] = None
-    facebook_connection[
-        "page_access_token"
-    ] = None
+    db.query(FacebookConnection).filter(
+        FacebookConnection.user_id == user.id
+    ).delete()
+    db.commit()
 
     return {
         "success": True,

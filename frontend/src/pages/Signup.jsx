@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import AuthLayout from "../components/AuthLayout";
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -51,96 +52,67 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen auth-bg flex items-center justify-center px-4 py-10">
-      <div className="classic-card w-full max-w-md rounded-3xl p-8">
-        <div className="text-center mb-8">
-          <p className="text-sm uppercase tracking-[0.3em] text-mehroon">
-            Start Your Growth
-          </p>
+    <AuthLayout
+      title="Create an account"
+      error={error}
+      subtitle={
+        <>
+          Already have an account? <Link to="/login">Log in</Link>
+        </>
+      }
+    >
+      <form onSubmit={handleSignup} className="au-form">
+        <input
+          type="text"
+          placeholder="Full Name"
+          className="au-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
 
-          <h1 className="font-classic text-4xl font-bold text-mehroonDark mt-2">
-            Create Account
-          </h1>
+        <input
+          type="email"
+          placeholder="Email Address"
+          className="au-input"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-          <p className="text-sm text-mehroonDark/70 mt-3">
-            Sign up to start creating marketing plans and social media content
-            for your business.
-          </p>
-        </div>
+        <input
+          type="password"
+          placeholder="Password"
+          className="au-input"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-        {error && (
-          <div className="mb-5 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
+        <input
+          type="password"
+          placeholder="Confirm Password"
+          className="au-input"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+        />
 
-        <form onSubmit={handleSignup} className="space-y-4">
-          <input
-            type="text"
-            placeholder="Full Name"
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-mehroon"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-
-          <input
-            type="email"
-            placeholder="Email Address"
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-mehroon"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-mehroon"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-
-          <input
-            type="password"
-            placeholder="Confirm Password"
-            className="w-full rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-mehroon"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-          />
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-mehroon px-5 py-3 font-semibold text-beige shadow-lg transition hover:bg-mehroonDark disabled:opacity-70"
-          >
-            {loading ? "Creating Account..." : "Create Account"}
-          </button>
-        </form>
-
-        <div className="my-6 flex items-center">
-          <div className="h-px flex-1 bg-gray-300"></div>
-          <span className="mx-4 text-sm text-gray-500">OR</span>
-          <div className="h-px flex-1 bg-gray-300"></div>
-        </div>
-
-        <button
-          onClick={handleGoogleSignup}
-          disabled={loading}
-          className="w-full rounded-xl border border-gray-300 bg-white px-5 py-3 font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-70"
-        >
-          Continue with Google
+        <button type="submit" disabled={loading} className="au-btn">
+          {loading ? "Creating Account..." : "Create account"}
         </button>
+      </form>
 
-        <p className="text-center text-sm mt-6 text-mehroonDark/70">
-          Already have an account?{" "}
-          <Link to="/login" className="font-bold text-mehroon">
-            Login
-          </Link>
-        </p>
-      </div>
-    </div>
+      <div className="au-divider">Or register with</div>
+
+      <button
+        onClick={handleGoogleSignup}
+        disabled={loading}
+        className="au-google"
+      >
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C.9 16.4 0 20.1 0 24s.9 7.6 2.6 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.9 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+        Google
+      </button>
+    </AuthLayout>
   );
 }

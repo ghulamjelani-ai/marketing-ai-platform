@@ -1,0 +1,77 @@
+/* Theme variables: dark (default) and light. Toggled via data-theme on <html>. */
+:root,
+:root[data-theme="dark"] {
+  --bg: #14090c;
+  --card: #231318;
+  --card2: #2c1a20;
+  --text: #f5e8d0;
+  --accent: #d6b98c;
+  --ok-text: #86efac;
+  --err-text: #fecaca;
+  --err-bg: rgba(127, 29, 29, 0.35);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5e8d0;
+  --card: #fff8eb;
+  --card2: #f6ead2;
+  --text: #3b151b;
+  --accent: #7b1e2b;
+  --ok-text: #166534;
+  --err-text: #991b1b;
+  --err-bg: rgba(254, 226, 226, 0.9);
+  color-scheme: light;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.4s, color 0.4s;
+}
+
+.dx-card,
+.dx-nav,
+.au-card,
+.au-input,
+.dx-input {
+  transition: background 0.4s, border-color 0.3s, color 0.3s, box-shadow 0.35s, transform 0.35s;
+}
+
+.dx-strong { color: var(--text); }
+.dx-accent-text { color: var(--accent); }
+
+/* theme switch */
+.th-toggle {
+  position: relative;
+  width: 62px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--card);
+  cursor: pointer;
+  padding: 0;
+}
+.th-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  background: linear-gradient(135deg, #9c2a3b, #7b1e2b);
+  transition: transform 0.45s cubic-bezier(0.5, 1.6, 0.4, 1);
+}
+:root[data-theme="light"] .th-knob { transform: translateX(30px); }
+.th-knob::before { content: "🌙"; }
+:root[data-theme="light"] .th-knob::before { content: "☀️"; }
+
+.th-fixed { position: fixed; top: 16px; right: 16px; z-index: 60; }
+
+@media (prefers-reduced-motion: reduce) {
+  .th-knob, body { transition: none; }
+}

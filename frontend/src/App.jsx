@@ -2,19 +2,23 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Home from "./pages/Home";
+import Intro from "./pages/Intro";
+import Scheduled from "./pages/Scheduled";
 import { useAuth } from "./context/AuthContext";
+import "./auth.css";
+import "./theme.css";
 
 function ProtectedRoute({ children }) {
   const { user, authLoading } = useAuth();
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-beige">
-        <div className="classic-card rounded-3xl px-8 py-6 text-center">
-          <h2 className="font-classic text-3xl font-bold text-mehroon">
+      <div className="au-page">
+        <div className="au-card rounded-3xl px-8 py-6 text-center">
+          <h2 className="font-classic text-3xl font-bold" style={{ color: "var(--text)" }}>
             Loading...
           </h2>
-          <p className="text-sm text-mehroonDark/70 mt-2">
+          <p className="text-sm mt-2" style={{ color: "color-mix(in srgb, var(--text) 60%, transparent)" }}>
             Checking your account.
           </p>
         </div>
@@ -34,12 +38,12 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-beige">
-        <div className="classic-card rounded-3xl px-8 py-6 text-center">
-          <h2 className="font-classic text-3xl font-bold text-mehroon">
+      <div className="au-page">
+        <div className="au-card rounded-3xl px-8 py-6 text-center">
+          <h2 className="font-classic text-3xl font-bold" style={{ color: "var(--text)" }}>
             Marketing AI
           </h2>
-          <p className="text-sm text-mehroonDark/70 mt-2">
+          <p className="text-sm mt-2" style={{ color: "color-mix(in srgb, var(--text) 60%, transparent)" }}>
             Preparing your workspace...
           </p>
         </div>
@@ -51,7 +55,7 @@ export default function App() {
     <Routes>
       <Route
         path="/"
-        element={<Navigate to={user ? "/home" : "/login"} replace />}
+        element={user ? <Navigate to="/home" replace /> : <Intro />}
       />
 
       <Route
@@ -69,6 +73,15 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Home />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/scheduled"
+        element={
+          <ProtectedRoute>
+            <Scheduled />
           </ProtectedRoute>
         }
       />

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import create_db_tables
-from app.routers import auth, chat, facebook
+from app.routers import auth, autopilot, chat, facebook, history, images, memory, schedule
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -31,6 +31,11 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Firebase Auth"])
 app.include_router(chat.router, prefix="/chat", tags=["AI Chat"])
 app.include_router(facebook.router, prefix="/facebook", tags=["Facebook"])
+app.include_router(images.router, prefix="/images", tags=["AI Images"])
+app.include_router(autopilot.router, prefix="/autopilot", tags=["Autopilot"])
+app.include_router(history.router, prefix="/history", tags=["History"])
+app.include_router(memory.router, prefix="/memory", tags=["Memory"])
+app.include_router(schedule.router, prefix="/schedule", tags=["Scheduled Posts"])
 
 
 @app.get("/")

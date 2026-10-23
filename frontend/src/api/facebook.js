@@ -1,118 +1,65 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  "http://localhost:8000";
-
-
-async function parseResponse(response) {
-  let data;
-
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    let errorMessage = "Something went wrong.";
-
-    if (typeof data?.detail === "string") {
-      errorMessage = data.detail;
-    } else if (data?.detail?.message) {
-      errorMessage = data.detail.message;
-    } else if (data?.message) {
-      errorMessage = data.message;
-    }
-
-    throw new Error(errorMessage);
-  }
-
-  return data;
-}
-
+import { API_BASE_URL, authHeaders, parseResponse } from "./config";
 
 export async function connectFacebook() {
-  const response = await fetch(
-    `${API_BASE_URL}/facebook/connect-url`,
-  );
+  const response = await fetch(`${API_BASE_URL}/facebook/connect-url`, {
+    headers: await authHeaders(),
+  });
 
   const data = await parseResponse(response);
 
   if (!data?.connect_url) {
-    throw new Error(
-      "Facebook connection URL was not returned.",
-    );
+    throw new Error("Facebook connection URL was not returned.");
   }
 
   window.location.href = data.connect_url;
 }
 
-
 export async function getFacebookStatus() {
-  const response = await fetch(
-    `${API_BASE_URL}/facebook/status`,
-  );
+  const response = await fetch(`${API_BASE_URL}/facebook/status`, {
+    headers: await authHeaders(),
+  });
 
   return parseResponse(response);
 }
 
+export async function publishFacebookPost(message) {
+  const response = await fetch(`${API_BASE_URL}/facebook/publish`, {
+    method: "POST",
 
-export async function publishFacebookPost(
-  message,
-) {
-  const response = await fetch(
-    `${API_BASE_URL}/facebook/publish`,
-    {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        message,
-      }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
     },
-  );
+
+    body: JSON.stringify({
+      message,
+    }),
+  });
 
   return parseResponse(response);
 }
 
-
-export async function publishFacebookPhoto(
-  message,
-  image,
-) {
+export async function publishFacebookPhoto(message, image) {
   const formData = new FormData();
 
-  formData.append(
-    "message",
-    message || "",
-  );
+  formData.append("message", message || "");
 
-  formData.append(
-    "image",
-    image,
-  );
+  formData.append("image", image);
 
-  const response = await fetch(
-    `${API_BASE_URL}/facebook/publish-photo`,
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}/facebook/publish-photo`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: formData,
+  });
 
   return parseResponse(response);
 }
 
-
 export async function disconnectFacebook() {
-  const response = await fetch(
-    `${API_BASE_URL}/facebook/disconnect`,
-    {
-      method: "POST",
-    },
-  );
+  const response = await fetch(`${API_BASE_URL}/facebook/disconnect`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
 
   return parseResponse(response);
 }

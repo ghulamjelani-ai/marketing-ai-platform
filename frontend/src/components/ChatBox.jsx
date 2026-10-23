@@ -1,9 +1,15 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import apiClient from "../api/client";
+import { deleteConversation, listConversations } from "../api/activity";
 import { useAuth } from "../context/AuthContext";
 import { auth } from "../firebase/firebase";
+import PostAssistant from "./PostAssistant";
+import RichText from "./RichText";
+import { parsePlan } from "../utils/parsePlan";
+import "../dashboard.css";
+import "../automation.css";
 
-export default function ChatBox() {
+export default function ChatBox({ assistant }) {
   const { user } = useAuth();
 
   const [conversationId, setConversationId] = useState(
@@ -17,8 +23,15 @@ export default function ChatBox() {
     },
   ]);
 
+  const scrollRef = useRef(null);
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const getFirebaseToken = async () => {
     const currentUser = auth.currentUser;
@@ -59,6 +72,11 @@ export default function ChatBox() {
     loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -134,6 +152,47 @@ export default function ChatBox() {
     }
   };
 
+  const openHistory = async () => {
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
+
+    setShowHistory(true);
+    setHistoryBusy(true);
+    setHistoryError("");
+
+    try {
+      const data = await listConversations();
+      setConversations(data.conversations || []);
+    } catch (error) {
+      setHistoryError(error.message || "Could not load your chats.");
+    } finally {
+      setHistoryBusy(false);
+    }
+  };
+
+  const openConversation = (id) => {
+    localStorage.setItem("marketing_ai_conversation_id", id);
+    setConversationId(id);
+    setShowHistory(false);
+  };
+
+  const removeConversation = async (id) => {
+    if (!window.confirm("Delete this conversation?")) return;
+
+    try {
+      await deleteConversation(id);
+      setConversations((list) => list.filter((item) => item.id !== id));
+
+      if (id === conversationId) {
+        startNewChat();
+      }
+    } catch (error) {
+      setHistoryError(error.message || "Could not delete the chat.");
+    }
+  };
+
   const startNewChat = () => {
     localStorage.removeItem("marketing_ai_conversation_id");
     setConversationId(null);
@@ -146,52 +205,155 @@ export default function ChatBox() {
     ]);
   };
 
+  // The latest AI reply that contains ready-to-use posts gets the guided steps.
+  let assistIndex = -1;
+  let assistPlan = null;
+
+  if (assistant) {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "user") continue;
+
+      const plan = parsePlan(messages[i].text);
+
+      if (plan.posts.length > 0) {
+        assistIndex = i;
+        assistPlan = plan;
+        break;
+      }
+    }
+  }
+
   return (
-    <div className="classic-card rounded-3xl p-5 h-full flex flex-col">
+    <div className="dx-card dx-rise dx-d1 rounded-3xl p-5 h-full flex flex-col">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-classic text-2xl font-bold text-mehroonDark">
+          <h3 className="dx-title text-2xl flex items-center gap-3">
             AI Marketing Assistant
+            <span className="dx-online" title="Online" />
           </h3>
 
-          <p className="text-sm text-mehroonDark/60">
+          <p className="text-sm dx-faint mt-1">
             Chat with AI to generate your business plan, captions, post ideas
             and campaign strategy.
           </p>
         </div>
 
-        <button
-          onClick={startNewChat}
-          className="rounded-full border border-mehroon/30 px-4 py-2 text-xs font-semibold text-mehroon hover:bg-mehroon hover:text-beige transition"
-        >
-          New Chat
-        </button>
+        <div className="flex gap-2">
+          <button onClick={openHistory} className="dx-btn-ghost dx-btn-sm">
+            History
+          </button>
+
+          <button onClick={startNewChat} className="dx-btn-ghost dx-btn-sm">
+            New Chat
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 min-h-[420px] max-h-[520px] overflow-y-auto space-y-4 pr-2">
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
+      {showHistory && (
+        <div className="dx-history">
+          <p className="dx-history-title">Your earlier chats</p>
+
+          {historyBusy && <p className="dx-history-empty">Loading...</p>}
+
+          {historyError && <p className="dx-history-empty">{historyError}</p>}
+
+          {!historyBusy && !historyError && conversations.length === 0 && (
+            <p className="dx-history-empty">
+              No saved chats yet. Your conversations are saved automatically.
+            </p>
+          )}
+
+          {conversations.map((item) => (
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-line ${
-                msg.role === "user"
-                  ? "bg-mehroon text-beige"
-                  : "bg-white/80 text-mehroonDark border border-mehroon/10"
+              key={item.id}
+              className={`dx-history-item ${
+                item.id === conversationId ? "on" : ""
               }`}
             >
-              {msg.text}
+              <button
+                type="button"
+                className="dx-history-open"
+                onClick={() => openConversation(item.id)}
+              >
+                <span className="dx-history-name">{item.title}</span>
+                <span className="dx-history-date">
+                  {new Date(item.updated_at + "Z").toLocaleString([], {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                className="dx-history-delete"
+                onClick={() => removeConversation(item.id)}
+                aria-label="Delete conversation"
+                title="Delete conversation"
+              >
+                &times;
+              </button>
             </div>
-          </div>
+          ))}
+        </div>
+      )}
+
+      <div
+        ref={scrollRef}
+        className="dx-chat-scroll flex-1 min-h-[420px] max-h-[520px] overflow-y-auto space-y-4 pr-2"
+      >
+        {messages.map((msg, index) => (
+          <Fragment key={index}>
+            <div
+              className={`dx-msg flex ${
+                msg.role === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              {msg.role !== "user" && <div className="dx-ai-avatar">✦</div>}
+
+              <div
+                className={`max-w-[85%] px-4 py-3 text-sm leading-relaxed ${
+                  msg.role === "user" ? "dx-bubble-user" : "dx-bubble-ai"
+                }`}
+              >
+                {msg.role === "user" ? msg.text : <RichText text={msg.text} />}
+              </div>
+            </div>
+
+            {index === assistIndex && (
+              <div className="dx-msg pl-9">
+                <PostAssistant
+                  key={`${assistIndex}-${assistant.publishedCount}`}
+                  plan={assistPlan}
+                  assistant={assistant}
+                />
+              </div>
+            )}
+          </Fragment>
         ))}
 
         {loading && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-2xl px-4 py-3 text-sm bg-white/80 text-mehroonDark border border-mehroon/10">
-              Creating your marketing plan...
+          <div className="dx-msg flex justify-start">
+            <div className="dx-ai-avatar">✦</div>
+            <div className="dx-bubble-ai max-w-[85%] px-4 py-3 text-sm flex items-center gap-3">
+              <div className="dx-steps">
+                {[
+                  "Understanding your business…",
+                  "Building marketing strategy…",
+                  "Writing post ideas…",
+                ].map((step, i) => (
+                  <div
+                    key={step}
+                    className="dx-step"
+                    style={{ "--sd": `${i * 1.4}s` }}
+                  >
+                    <span className="dx-step-spin" />
+                    {step}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -200,7 +362,7 @@ export default function ChatBox() {
       <div className="mt-5 flex gap-3">
         <input
           placeholder="Example: I run a bakery in Lahore and want more customers..."
-          className="flex-1 rounded-xl border border-mehroon/20 bg-white/80 px-4 py-3 outline-none focus:border-mehroon"
+          className="dx-input flex-1"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -208,11 +370,7 @@ export default function ChatBox() {
           }}
         />
 
-        <button
-          onClick={handleSend}
-          disabled={loading}
-          className="rounded-xl bg-mehroon px-6 py-3 font-semibold text-beige hover:bg-mehroonDark transition disabled:opacity-60"
-        >
+        <button onClick={handleSend} disabled={loading} className="dx-btn">
           {loading ? "Wait..." : "Send"}
         </button>
       </div>
