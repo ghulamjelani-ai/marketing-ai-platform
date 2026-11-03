@@ -1,8 +1,9 @@
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { Link, useNavigate } from "react-router-dom";
 import "../dashboard.css";
 import "../automation.css";
 import ThemeToggle from "./ThemeToggle";
+import BrandMark from "./BrandMark";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -16,22 +17,13 @@ export default function Navbar() {
   return (
     <header className="dx-nav">
       <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <svg
-            className="dx-gear"
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="1.6"
-            style={{ stroke: "var(--accent)" }}
-          >
-            <circle cx="12" cy="12" r="3" />
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" />
-          </svg>
+        <Link to="/home" className="flex items-center gap-3" aria-label="Marketing AI overview">
+          <BrandMark size={40} />
           <div>
             <h2 className="dx-brand">Marketing AI</h2>
             <p className="dx-tagline">Smart Plans. Premium Posts. Social Growth.</p>
           </div>
-        </div>
+        </Link>
 
         <div className="flex items-center gap-4">
           <div className="hidden md:block">
@@ -48,10 +40,6 @@ export default function Navbar() {
             <p className="dx-user-name">{user?.name}</p>
             <p className="dx-user-email">{user?.email}</p>
           </div>
-
-          <Link to="/scheduled" className="dx-btn-ghost dx-btn-sm">
-            🗓️ Scheduled posts
-          </Link>
 
           <ThemeToggle />
 

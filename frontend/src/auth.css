@@ -137,17 +137,83 @@
 .au-sub { margin: 0.9rem 0 0; font-size: 0.9rem; color: color-mix(in srgb, var(--text) 60%, transparent); }
 .au-sub a { color: var(--accent); text-decoration: underline; }
 
-.au-error {
+.au-alert {
   margin-top: 1.25rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(248, 113, 113, 0.4);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-radius: 0.7rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  animation: au-alert-in 0.25s ease-out;
+}
+.au-alert-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+}
+.au-alert a { color: inherit; font-weight: 600; text-decoration: underline; }
+.au-error {
+  border: 1px solid rgba(248, 113, 113, 0.45);
   background: var(--err-bg);
   color: var(--err-text);
-  padding: 0.7rem 1rem;
-  font-size: 0.85rem;
+}
+.au-error .au-alert-icon { background: #dc4c4c; }
+.au-success {
+  border: 1px solid rgba(74, 190, 120, 0.45);
+  background: rgba(74, 190, 120, 0.12);
+  color: color-mix(in srgb, var(--text) 88%, #3fbf75);
+}
+.au-success .au-alert-icon { background: #34a865; }
+@keyframes au-alert-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
 
+/* Live hints under password fields */
+.au-hints { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; font-size: 0.78rem; }
+.au-hint { display: flex; align-items: center; gap: 0.4rem; color: color-mix(in srgb, var(--text) 55%, transparent); }
+.au-hint::before { content: "\2022"; width: 0.9rem; text-align: center; }
+.au-hint.ok { color: #3fbf75; }
+.au-hint.ok::before { content: "\2713"; }
+.au-hint.bad { color: var(--err-text); }
+.au-hint.bad::before { content: "\2715"; }
+
 .au-form { margin-top: 1.75rem; display: flex; flex-direction: column; gap: 0.9rem; }
+
+/* Password field with a show/hide button */
+.au-pass { position: relative; }
+.au-pass .au-input { padding-right: 3rem; }
+.au-eye {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  cursor: pointer;
+}
+.au-eye:hover, .au-eye:focus-visible { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); outline: none; }
+
+.au-otp { text-align: center; font-size: 1.4rem; letter-spacing: 0.5em; }
+.au-notice { margin: 1rem 0 0; font-size: 0.85rem; color: color-mix(in srgb, var(--text) 70%, transparent); }
+.au-otp-actions { margin-top: 1.25rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.75rem; }
+.au-link { border: 0; background: none; padding: 0; color: var(--accent); font-size: 0.85rem; text-decoration: underline; cursor: pointer; }
+.au-link:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
+.au-forgot { align-self: flex-end; margin-top: 0; }
 
 .au-input {
   width: 100%;
@@ -251,3 +317,71 @@
 @media (prefers-reduced-motion: reduce) {
   .au-card, .au-visual, .au-form-wrap > *, .au-orb, .au-dune-a, .au-dune-b { animation: none; }
 }
+
+/* Pop-up notifications (components/Toaster.jsx) */
+.toaster {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  display: grid;
+  gap: 0.6rem;
+  width: min(360px, calc(100vw - 2rem));
+}
+.toast {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem 2.4rem 0.95rem 0.9rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--bg, #1d1215) 92%, #fff 8%);
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.toast-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.toast-success .toast-icon { background: #34a865; }
+.toast-info .toast-icon { background: #3b82c4; }
+.toast-error .toast-icon { background: #dc4c4c; }
+.toast-title { margin: 0; font-weight: 600; font-size: 0.92rem; }
+.toast-text { margin: 0.2rem 0 0; font-size: 0.82rem; color: color-mix(in srgb, var(--text) 70%, transparent); }
+.toast-close {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.5rem;
+  border: 0;
+  background: none;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.toast-close:hover { color: var(--text); }
+.toast-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  transform-origin: left;
+  animation: toast-timer linear forwards;
+}
+.toast-success .toast-timer { background: #34a865; }
+.toast-info .toast-timer { background: #3b82c4; }
+.toast-error .toast-timer { background: #dc4c4c; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes toast-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }

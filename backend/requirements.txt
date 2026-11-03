@@ -1,21 +1,24 @@
-fastapi
-uvicorn[standard]
-python-dotenv
-pydantic
-python-multipart
+# Pinned to the versions the automated tests ran against, so a fresh install behaves the same.
+# To upgrade: change a version, run `pytest` in backend, and commit.
+fastapi==0.162.0
+starlette==1.9.0
+uvicorn[standard]==0.54.0
+python-dotenv==1.2.4
+pydantic==2.14.1
+python-multipart==0.0.32
 
 # Database
-sqlalchemy
-psycopg[binary]
+sqlalchemy==2.1.6
+psycopg[binary]==3.3.6
 
 # Firebase
-firebase-admin
+firebase-admin==7.7.0
 
-# Google Gemini
-google-genai
-
-# OpenAI (chat) and OpenAI-compatible client
-openai
+# OpenAI (text, pictures and speech)
+openai==3.37.0
 
 # Facebook Graph API
-requests
+requests==2.34.2
+
+# Encrypts stored Facebook Page tokens
+cryptography==50.0.2

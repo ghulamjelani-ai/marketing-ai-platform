@@ -1,0 +1,67 @@
+# Runs the whole app: database, backend and website.
+#
+#   1. Copy backend/.env.example to backend/.env and fill it in (OpenAI, Firebase, Facebook, email).
+#   2. Put your Firebase service account file at backend/firebase-service-account.json.
+#   3. Create a file named .env next to this one with DB_PASSWORD=<a strong password> and the
+#      VITE_* values from frontend/.env.example.
+#   4. docker compose up --build        (site: http://localhost:8080, API: http://localhost:8000)
+#
+# The backend runs as ONE process on purpose (see backend/Dockerfile).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: marketing_ai_db
+      POSTGRES_USER: marketing_ai_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in a .env file next to docker-compose.yml}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marketing_ai_user -d marketing_ai_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      APP_ENV: production
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: marketing_ai_db
+      DB_USER: marketing_ai_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      FIREBASE_CREDENTIALS_PATH: /run/secrets/firebase.json
+      # The key that encrypts Facebook Page tokens must be set here; there is no writable key file.
+      FACEBOOK_TOKEN_KEY: ${FACEBOOK_TOKEN_KEY:?Set FACEBOOK_TOKEN_KEY in the .env file next to docker-compose.yml}
+    volumes:
+      - ./backend/firebase-service-account.json:/run/secrets/firebase.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

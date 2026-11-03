@@ -1,67 +1,104 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useRef, useState } from "react";
+import { useAuth } from "../context/useAuth";
 import AuthLayout from "../components/AuthLayout";
+import PasswordInput from "../components/PasswordInput";
+import PasswordHints from "../components/PasswordHints";
+import { friendlyAuthError, validateSignup } from "../utils/authErrors";
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signup, googleLogin } = useAuth();
+  const { signup, googleLogin, signInError } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [error, setError] = useState("");
+  const [error, setError] = useState(signInError ? friendlyAuthError(signInError) : "");
+  const [errorCode, setErrorCode] = useState("");
   const [loading, setLoading] = useState(false);
+  // Blocks a second submit before React has re-rendered the disabled button.
+  const busyRef = useRef(false);
+
+  const fail = (err) => {
+    setError(friendlyAuthError(err));
+    setErrorCode(err?.code || "");
+  };
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    if (busyRef.current) return;
 
-    if (password !== confirmPassword) {
-      return setError("Passwords do not match");
+    const problem = validateSignup({ name, email, password, confirmPassword });
+
+    if (problem) {
+      setError(problem);
+      setErrorCode("");
+      return;
     }
+
+    busyRef.current = true;
 
     try {
       setError("");
       setLoading(true);
 
-      await signup(name, email, password);
+      const { otpRequired } = await signup(name.trim(), email.trim(), password);
 
-      navigate("/home");
+      if (!otpRequired) navigate("/home");
     } catch (err) {
-      setError(err.message || "Signup failed");
+      fail(err);
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
 
   const handleGoogleSignup = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     try {
       setError("");
       setLoading(true);
 
-      await googleLogin();
+      const { otpRequired } = await googleLogin();
 
-      navigate("/home");
+      if (!otpRequired) navigate("/home");
     } catch (err) {
-      setError(err.message || "Google signup failed");
+      fail(err);
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
 
+  const loginLink = (
+    <Link to="/login" state={{ email: email.trim() }}>
+      Log in
+    </Link>
+  );
+
   return (
     <AuthLayout
       title="Create an account"
-      error={error}
+      error={
+        error && errorCode === "auth/email-already-in-use" ? (
+          <>
+            {error} {loginLink}
+          </>
+        ) : (
+          error
+        )
+      }
       subtitle={
         <>
           Already have an account? <Link to="/login">Log in</Link>
         </>
       }
     >
-      <form onSubmit={handleSignup} className="au-form">
+      <form onSubmit={handleSignup} className="au-form" noValidate>
         <input
           type="text"
           placeholder="Full Name"
@@ -80,23 +117,21 @@ export default function Signup() {
           required
         />
 
-        <input
-          type="password"
+        <PasswordInput
           placeholder="Password"
-          className="au-input"
+          autoComplete="new-password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
+          onChange={(event) => setPassword(event.target.value)}
         />
 
-        <input
-          type="password"
+        <PasswordInput
           placeholder="Confirm Password"
-          className="au-input"
+          autoComplete="new-password"
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          required
+          onChange={(event) => setConfirmPassword(event.target.value)}
         />
+
+        <PasswordHints password={password} confirm={confirmPassword} />
 
         <button type="submit" disabled={loading} className="au-btn">
           {loading ? "Creating Account..." : "Create account"}

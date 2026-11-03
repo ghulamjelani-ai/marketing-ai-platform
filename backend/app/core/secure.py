@@ -36,3 +36,11 @@ def decrypt_text(token: str) -> str | None:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken:
         return None
+
+
+def derived_key(purpose: str) -> bytes:
+    """A separate secret for `purpose` (for example hashing login codes), from the same key."""
+
+    import hashlib
+
+    return hashlib.sha256(b"marketing-ai:" + purpose.encode() + b":" + _load_key()).digest()

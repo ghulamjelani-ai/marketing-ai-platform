@@ -19,6 +19,35 @@ class FacebookError(Exception):
         self.detail = detail
 
 
+# Graph API error codes: https://developers.facebook.com/docs/graph-api/guides/error-handling
+_TOKEN_CODES = {190, 102, 463, 467}
+_PERMISSION_CODES = {10, 200, 210, 220, 230, 299}
+_RATE_CODES = {4, 17, 32, 341, 368, 613}
+
+
+def explain(error: FacebookError) -> tuple[int, str, str]:
+    """(HTTP status, error code, message for the user) for a failed Facebook call."""
+
+    detail = error.detail if isinstance(error.detail, dict) else {}
+    graph = (detail.get("facebook_response") or {}).get("error") or {}
+    code = graph.get("code")
+
+    if code in _TOKEN_CODES:
+        return 401, "FB_TOKEN_EXPIRED", "Your Facebook connection has expired. Reconnect your Facebook Page and try again."
+
+    if code in _PERMISSION_CODES or (isinstance(code, int) and 200 <= code <= 299):
+        return 403, "FB_PERMISSION", "Facebook did not allow this. Reconnect your Page and accept all requested permissions."
+
+    if code in _RATE_CODES:
+        return 429, "FB_RATE_LIMIT", "Facebook is limiting requests right now. Please wait a few minutes and try again."
+
+    if error.detail and isinstance(error.detail, str) and "request failed" in error.detail:
+        return 502, "FB_NETWORK", "Could not reach Facebook. Check the internet connection and try again."
+
+    message = graph.get("message") or detail.get("message") or str(error.detail) or "Facebook returned an error."
+    return 502, "FB_ERROR", "Facebook returned an error: " + str(message)
+
+
 def _unix(moment: datetime) -> int:
     # `moment` is a naive UTC datetime
     return calendar.timegm(moment.timetuple())
@@ -106,6 +135,25 @@ def publish_photo(
     post = _post(f"{GRAPH_URL}/{page_id}/feed", data, "Facebook scheduling")
 
     return {"id": post.get("id"), "post_id": post.get("id")}
+
+
+def update_post(
+    post_id: str,
+    token: str,
+    message: str | None = None,
+    scheduled_at: datetime | None = None,
+) -> None:
+    """Change the text and/or publish time of a post that is still waiting to go out."""
+
+    data = {"access_token": token}
+
+    if message is not None:
+        data["message"] = message
+
+    if scheduled_at is not None:
+        data["scheduled_publish_time"] = str(_unix(scheduled_at))
+
+    _post(f"{GRAPH_URL}/{post_id}", data, "Facebook post update")
 
 
 def delete_post(post_id: str, token: str) -> None:

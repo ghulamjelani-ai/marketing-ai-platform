@@ -41,9 +41,12 @@ export const draftWeekPlan = (description) =>
 export const getScheduled = () => get("/schedule");
 export const cancelScheduled = (id) => send("DELETE", `/schedule/${id}`);
 export const cancelAllScheduled = () => send("POST", "/schedule/cancel-all");
+// Clears finished (published, cancelled or removed) entries from the list.
+export const clearEarlier = (id) => send("DELETE", `/schedule/earlier/${id}`);
+export const clearAllEarlier = () => send("POST", "/schedule/clear-earlier");
 
 // Hands one post to Facebook with its publish time (an ISO string with a time zone).
-export async function schedulePost({ message, runAt, image }) {
+export async function schedulePost({ message, runAt, image, idempotencyKey }) {
   const formData = new FormData();
 
   formData.append("message", message || "");
@@ -55,6 +58,28 @@ export async function schedulePost({ message, runAt, image }) {
 
   const response = await fetch(`${API_BASE_URL}/schedule/post`, {
     method: "POST",
+    headers: {
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      ...(await authHeaders()),
+    },
+    body: formData,
+  });
+
+  return parseResponse(response);
+}
+
+// Changes a post that is still waiting. Only the fields that changed are sent:
+// message, runAt (ISO with time zone), image (a File) or removeImage.
+export async function updateScheduled(id, { message, runAt, image, removeImage }) {
+  const formData = new FormData();
+
+  if (message !== undefined) formData.append("message", message);
+  if (runAt) formData.append("run_at", runAt);
+  if (image) formData.append("image", image);
+  if (removeImage) formData.append("remove_image", "true");
+
+  const response = await fetch(`${API_BASE_URL}/schedule/${id}`, {
+    method: "PUT",
     headers: await authHeaders(),
     body: formData,
   });
@@ -70,3 +95,12 @@ export const getBestTime = () =>
 export const autopilotPost = (request) =>
   send("POST", "/autopilot/post", { request });
 
+
+// ---- email notifications about posts ----
+export const getNotifications = () => get("/notifications");
+export const saveNotificationSettings = (emailEnabled) =>
+  send("PUT", "/notifications/settings", { email_enabled: emailEnabled });
+export const sendTestEmail = () => send("POST", "/notifications/test");
+
+// How the latest published posts performed (engagement from Facebook; kept 10 minutes).
+export const getInsights = (refresh = false) => get(`/history/insights${refresh ? "?refresh=true" : ""}`);

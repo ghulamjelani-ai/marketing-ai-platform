@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core import ratelimit
 from app.core.openai_client import generate_image_png
 from app.db.database import get_db
 from app.models.models import User
@@ -22,6 +23,8 @@ def generate_image(
     user: User = Depends(get_current_db_user),
 ):
     """Generate one high quality marketing image with the OpenAI image API."""
+
+    ratelimit.check(user.id, "image")
 
     return Response(
         content=generate_image_png(data.prompt, get_memory_text(db, user.id)),

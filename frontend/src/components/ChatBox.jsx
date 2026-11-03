@@ -1,11 +1,13 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import apiClient from "../api/client";
 import { deleteConversation, listConversations } from "../api/activity";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { auth } from "../firebase/firebase";
 import PostAssistant from "./PostAssistant";
 import RichText from "./RichText";
+import VoiceButton from "./VoiceButton";
 import { parsePlan } from "../utils/parsePlan";
+import { canSpeak, speak, stopSpeaking } from "../utils/speech";
 import "../dashboard.css";
 import "../automation.css";
 
@@ -24,9 +26,21 @@ export default function ChatBox({ assistant }) {
   ]);
 
   const scrollRef = useRef(null);
+  // A conversation this chat just created is already on screen; it is not reloaded.
+  const createdHereRef = useRef(null);
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Replies to spoken messages are read aloud unless the user turns it off.
+  const [voiceReplies, setVoiceReplies] = useState(() => {
+    try {
+      return localStorage.getItem("marketing_ai_voice_replies") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const [speaking, setSpeaking] = useState(null); // the message being read aloud
 
   const [showHistory, setShowHistory] = useState(false);
   const [conversations, setConversations] = useState([]);
@@ -43,49 +57,95 @@ export default function ChatBox({ assistant }) {
     return await currentUser.getIdToken();
   };
 
-  const loadHistory = async () => {
-    if (!conversationId) return;
+  useEffect(() => {
+    if (!conversationId || conversationId === createdHereRef.current) return undefined;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const token = await getFirebaseToken();
+
+        const response = await apiClient.get(`/chat/history/${conversationId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (cancelled) return;
+
+        setMessages(
+          response.data.messages.map((msg) => ({
+            role: msg.role,
+            text: msg.content,
+          })),
+        );
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("Load history error:", error);
+        localStorage.removeItem("marketing_ai_conversation_id");
+        setConversationId(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  useEffect(() => stopSpeaking, []);
+
+  function readAloud(message) {
+    if (speak(message.text, () => setSpeaking((current) => (current === message ? null : current)))) {
+      setSpeaking(message);
+    }
+  }
+
+  function listen(message) {
+    if (speaking === message) {
+      stopSpeaking();
+      setSpeaking(null);
+    } else {
+      readAloud(message);
+    }
+  }
+
+  function toggleVoiceReplies() {
+    const next = !voiceReplies;
+    setVoiceReplies(next);
+
+    if (!next) {
+      stopSpeaking();
+      setSpeaking(null);
+    }
 
     try {
-      const token = await getFirebaseToken();
-
-      const response = await apiClient.get(`/chat/history/${conversationId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const loadedMessages = response.data.messages.map((msg) => ({
-        role: msg.role,
-        text: msg.content,
-      }));
-
-      setMessages(loadedMessages);
-    } catch (error) {
-      console.error("Load history error:", error);
-      localStorage.removeItem("marketing_ai_conversation_id");
-      setConversationId(null);
+      localStorage.setItem("marketing_ai_voice_replies", next ? "on" : "off");
+    } catch {
+      // storage can be blocked; the choice still applies for this visit
     }
-  };
-
-  useEffect(() => {
-    loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId]);
+  }
 
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, loading]);
 
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
+  // spokenText is set when the message came from the mic.
+  const handleSend = async (spokenText) => {
+    const spoken = typeof spokenText === "string";
+    const userText = spoken ? spokenText : input;
 
-    const userText = input;
+    if (!userText.trim() || loading) return;
+
+    stopSpeaking();
+    setSpeaking(null);
 
     const userMessage = {
       role: "user",
       text: userText,
+      voice: spoken,
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -111,6 +171,7 @@ export default function ChatBox({ assistant }) {
       );
 
       if (response.data.conversation_id) {
+        createdHereRef.current = response.data.conversation_id;
         setConversationId(response.data.conversation_id);
         localStorage.setItem(
           "marketing_ai_conversation_id",
@@ -124,6 +185,10 @@ export default function ChatBox({ assistant }) {
       };
 
       setMessages((prev) => [...prev, aiMessage]);
+
+      if (spoken && voiceReplies) {
+        readAloud(aiMessage);
+      }
     } catch (error) {
       console.error("Chat API Error:", error);
 
@@ -173,6 +238,7 @@ export default function ChatBox({ assistant }) {
   };
 
   const openConversation = (id) => {
+    createdHereRef.current = null;
     localStorage.setItem("marketing_ai_conversation_id", id);
     setConversationId(id);
     setShowHistory(false);
@@ -194,6 +260,8 @@ export default function ChatBox({ assistant }) {
   };
 
   const startNewChat = () => {
+    stopSpeaking();
+    setSpeaking(null);
     localStorage.removeItem("marketing_ai_conversation_id");
     setConversationId(null);
 
@@ -238,7 +306,19 @@ export default function ChatBox({ assistant }) {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          {canSpeak() && (
+            <button
+              onClick={toggleVoiceReplies}
+              className="dx-btn-ghost dx-btn-sm"
+              aria-pressed={voiceReplies}
+              aria-label={voiceReplies ? "Voice replies on" : "Voice replies off"}
+              title="Read replies aloud when you speak to the assistant"
+            >
+              {voiceReplies ? "🔊 Voice on" : "🔇 Voice off"}
+            </button>
+          )}
+
           <button onClick={openHistory} className="dx-btn-ghost dx-btn-sm">
             History
           </button>
@@ -318,7 +398,25 @@ export default function ChatBox({ assistant }) {
                   msg.role === "user" ? "dx-bubble-user" : "dx-bubble-ai"
                 }`}
               >
-                {msg.role === "user" ? msg.text : <RichText text={msg.text} />}
+                {msg.role === "user" ? (
+                  <>
+                    {msg.voice && <span className="dx-said" aria-label="Spoken">🎙️ </span>}
+                    {msg.text}
+                  </>
+                ) : (
+                  <RichText text={msg.text} />
+                )}
+
+                {msg.role !== "user" && index > 0 && canSpeak() && (
+                  <button
+                    type="button"
+                    className={`dx-listen ${speaking === msg ? "on" : ""}`}
+                    onClick={() => listen(msg)}
+                    aria-label={speaking === msg ? "Stop reading aloud" : "Read this reply aloud"}
+                  >
+                    {speaking === msg ? "■ Stop" : "🔊 Listen"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -370,7 +468,9 @@ export default function ChatBox({ assistant }) {
           }}
         />
 
-        <button onClick={handleSend} disabled={loading} className="dx-btn">
+        <VoiceButton onText={(text) => handleSend(text)} disabled={loading} label="Speak to the assistant" />
+
+        <button onClick={() => handleSend()} disabled={loading} className="dx-btn">
           {loading ? "Wait..." : "Send"}
         </button>
       </div>

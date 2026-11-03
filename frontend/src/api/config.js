@@ -28,7 +28,9 @@ export async function parseResponse(response) {
   if (!response.ok) {
     let errorMessage = "Something went wrong.";
 
-    if (typeof data?.detail === "string") {
+    if (data?.error?.message) {
+      errorMessage = data.error.message;
+    } else if (typeof data?.detail === "string") {
       errorMessage = data.detail;
     } else if (data?.detail?.message) {
       errorMessage = data.detail.message;

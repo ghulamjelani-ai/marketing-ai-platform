@@ -9,12 +9,16 @@ async function readErrorMessage(error) {
     try {
       const body = JSON.parse(await data.text());
 
+      if (body?.error?.message) return body.error.message;
       if (typeof body?.detail === "string") return body.detail;
       if (body?.detail?.message) return body.detail.message;
     } catch {
       // fall through to the generic message
     }
   }
+
+  if (error.code === "ECONNABORTED") return "The picture took too long to create. Please try again.";
+  if (!error.response) return "Could not reach the server. Check your connection and try again.";
 
   return error.message || "Image generation failed.";
 }
@@ -36,7 +40,7 @@ export async function generateImage(prompt) {
       { prompt },
       {
         responseType: "blob",
-        timeout: 150000,
+        timeout: 200000,
         headers: {
           Authorization: `Bearer ${token}`,
         },

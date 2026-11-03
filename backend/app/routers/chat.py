@@ -1,7 +1,9 @@
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core import ratelimit
 from app.core.openai_client import generate_marketing_ai_reply
 from app.db.database import get_db
 from app.models.models import Conversation, Message, User
@@ -12,19 +14,20 @@ from app.schemas.chat import ChatRequest, ChatResponse, ChatHistoryResponse
 router = APIRouter()
 
 
-@router.get("/test")
-def test_chat_model():
-    reply = generate_marketing_ai_reply(
-        user_message="Test message. Create a short marketing plan for a bakery.",
-        business_name="Test Bakery",
-        industry="Bakery",
-    )
+def find_conversation(db: Session, user: User, conversation_id: str | None):
+    """The user's conversation with this id, or None (also for an id that is not valid,
+    for example an old value left in the browser)."""
 
-    return {
-        "success": True,
-        "model": settings.OPENAI_MODEL,
-        "reply": reply,
-    }
+    try:
+        key = uuid.UUID(str(conversation_id))
+    except ValueError:
+        return None
+
+    return (
+        db.query(Conversation)
+        .filter(Conversation.id == key, Conversation.user_id == user.id)
+        .first()
+    )
 
 
 @router.post("/plan", response_model=ChatResponse)
@@ -34,15 +37,10 @@ def generate_marketing_plan(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_db_user),
 ):
+    ratelimit.check(user.id, "chat")
+
     if data.conversation_id:
-        conversation = (
-            db.query(Conversation)
-            .filter(
-                Conversation.id == data.conversation_id,
-                Conversation.user_id == user.id,
-            )
-            .first()
-        )
+        conversation = find_conversation(db, user, data.conversation_id)
 
         if not conversation:
             raise HTTPException(
@@ -122,14 +120,7 @@ def get_chat_history(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_db_user),
 ):
-    conversation = (
-        db.query(Conversation)
-        .filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == user.id,
-        )
-        .first()
-    )
+    conversation = find_conversation(db, user, conversation_id)
 
     if not conversation:
         raise HTTPException(
@@ -182,14 +173,7 @@ def delete_conversation(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_db_user),
 ):
-    conversation = (
-        db.query(Conversation)
-        .filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == user.id,
-        )
-        .first()
-    )
+    conversation = find_conversation(db, user, conversation_id)
 
     if not conversation:
         raise HTTPException(

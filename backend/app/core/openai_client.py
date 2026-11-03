@@ -2,9 +2,12 @@ import base64
 import json
 
 from fastapi import HTTPException, status
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from openai import (
     APIConnectionError,
+    APIError,
     APIStatusError,
+    APITimeoutError,
     AuthenticationError,
     BadRequestError,
     OpenAI,
@@ -12,6 +15,7 @@ from openai import (
 )
 
 from app.core.config import settings
+from app.core.errors import ApiError
 
 
 SYSTEM_PROMPT = """
@@ -143,36 +147,85 @@ def _system_text(memory: str | None) -> str:
     return text
 
 
+def _try_models(models: list[str], call):
+    """Calls call(model) for each model in turn and returns the first success.
+
+    A bad API key fails every model, so it is raised at once. Any other OpenAI error
+    (retired model, quota, timeout, server error) moves on to the next model. When all
+    models fail, the last error is raised so the normal error messages still apply.
+    """
+
+    last_error = None
+
+    for model in models:
+        try:
+            return call(model)
+        except AuthenticationError:
+            raise
+        except APIError as exc:
+            print(f"OpenAI model {model} failed, trying the next one:", repr(exc))
+            last_error = exc
+
+    raise last_error
+
+
+def _chat_create(client: OpenAI, **kwargs):
+    """chat.completions.create with the fallback list of chat models."""
+
+    return _try_models(
+        settings.chat_model_list,
+        lambda model: client.chat.completions.create(model=model, **kwargs),
+    )
+
+
 def _openai_errors(call):
-    """Run an OpenAI call and turn provider errors into clear HTTP errors."""
+    """Run an OpenAI call and turn provider errors into clear, coded API errors."""
 
     try:
         return call()
     except AuthenticationError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The OpenAI API key was rejected. Check OPENAI_API_KEY in backend/.env.",
-        )
+        raise ApiError(502, "AI_KEY_REJECTED", "The OpenAI API key was rejected. Check OPENAI_API_KEY in backend/.env.")
     except RateLimitError:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="OpenAI rate limit or quota reached. Check your OpenAI billing and try again.",
-        )
+        raise ApiError(429, "AI_RATE_LIMIT", "The AI service is busy or the quota is used up. Please wait a minute and try again.")
     except BadRequestError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OpenAI could not process this request. Try different wording.",
-        )
+        raise ApiError(400, "AI_BAD_REQUEST", "The AI could not process this request. Try again, or try different wording.")
+    except APITimeoutError:
+        raise ApiError(504, "AI_TIMEOUT", "The AI took too long to answer. Please try again.")
     except APIConnectionError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not reach the OpenAI service. Check the internet connection.",
-        )
+        raise ApiError(502, "AI_UNAVAILABLE", "Could not reach the AI service. Check the internet connection and try again.")
     except APIStatusError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"OpenAI returned an error (status {exc.status_code}).",
+        raise ApiError(502, "AI_ERROR", f"The AI service returned an error (status {exc.status_code}). Please try again.")
+
+# ---------------------------------------------------------------------------
+# Speech to text (the voice button)
+# ---------------------------------------------------------------------------
+
+# Words the recogniser should expect, so marketing terms are spelled right.
+VOICE_HINT = (
+    "A small business owner talks to a marketing assistant about Facebook posts, captions, "
+    "hashtags, offers, discounts, Eid, Ramadan, Lahore, Karachi, Islamabad. "
+    "They may speak English, Urdu or a mix of both."
+)
+
+
+def transcribe_audio(audio: bytes, filename: str, content_type: str, memory: str | None = None) -> str:
+    """Turns a short voice recording into text. The language is detected automatically."""
+
+    client = _get_client()
+    hint = VOICE_HINT + (" Business: " + memory.strip()[:300] if memory and memory.strip() else "")
+
+    result = _openai_errors(
+        lambda: _try_models(
+            settings.transcribe_model_list,
+            lambda model: client.audio.transcriptions.create(
+                model=model,
+                file=(filename, audio, content_type),
+                prompt=hint,
+            ),
         )
+    )
+
+    return (getattr(result, "text", "") or "").strip()
 
 
 def generate_marketing_ai_reply(
@@ -195,8 +248,8 @@ def generate_marketing_ai_reply(
     )
 
     try:
-        completion = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        completion = _chat_create(
+            client,
             messages=[
                 {"role": "system", "content": _system_text(memory)},
                 *(history or []),
@@ -234,9 +287,6 @@ def generate_marketing_ai_reply(
 
     return reply
 
-
-# Public name used by other routers (for example image generation).
-get_openai_client = _get_client
 
 
 # ---------------------------------------------------------------------------
@@ -282,8 +332,8 @@ def enhance_image_prompt(idea: str, memory: str | None = None) -> str:
         if memory and memory.strip():
             content += NL + NL + "Business profile: " + memory.strip()
 
-        completion = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        completion = _chat_create(
+            client,
             messages=[
                 {"role": "system", "content": ENHANCE_PROMPT.strip()},
                 {"role": "user", "content": content},
@@ -306,13 +356,17 @@ def generate_image_png(prompt: str, memory: str | None = None, enhance: bool = T
     # High quality images can take longer than a chat reply, so this call waits longer.
     client = _get_client().with_options(timeout=180.0)
 
+    # If one image model fails (retired, quota, timeout), the next one in the list is tried.
     result = _openai_errors(
-        lambda: client.images.generate(
-            model=settings.OPENAI_IMAGE_MODEL,
-            prompt=final_prompt,
-            size="1024x1024",
-            quality=settings.OPENAI_IMAGE_QUALITY,
-            n=1,
+        lambda: _try_models(
+            settings.image_model_list,
+            lambda model: client.images.generate(
+                model=model,
+                prompt=final_prompt,
+                size="1024x1024",
+                quality=settings.OPENAI_IMAGE_QUALITY,
+                n=1,
+            ),
         )
     )
 
@@ -351,8 +405,8 @@ def update_memory_summary(current: str | None, user_message: str) -> str:
     shown = (current or "").strip() or "(none)"
 
     completion = _openai_errors(
-        lambda: client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        lambda: _chat_create(
+            client,
             messages=[
                 {"role": "system", "content": MEMORY_PROMPT.strip()},
                 {
@@ -408,8 +462,8 @@ def draft_week_plan(description: str, memory: str | None, days: int = 7) -> list
         info.append("Latest description from the user: " + description.strip())
 
     completion = _openai_errors(
-        lambda: client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        lambda: _chat_create(
+            client,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
@@ -476,8 +530,8 @@ def suggest_post_times(memory: str | None) -> list[dict]:
     )
 
     completion = _openai_errors(
-        lambda: client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        lambda: _chat_create(
+            client,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
@@ -521,27 +575,83 @@ def suggest_post_times(memory: str | None) -> list[dict]:
 # One ready-to-publish post (used by the one-click Autopilot)
 # ---------------------------------------------------------------------------
 
+class AutopilotPost(BaseModel):
+    """The only shape Autopilot accepts from the model. Extra keys are ignored."""
+
+    caption: str = Field(min_length=1, max_length=400)
+    description: str = Field(default="", max_length=800)
+    hashtags: list[str] = Field(min_length=3, max_length=8)
+    image_prompt: str = Field(min_length=10, max_length=1200)
+    language: str = Field(min_length=2, max_length=40)
+
+    @field_validator("caption", "description", "image_prompt", "language", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("hashtags")
+    @classmethod
+    def _clean_tags(cls, tags: list[str]) -> list[str]:
+        cleaned = []
+
+        for tag in tags:
+            tag = "#" + tag.strip().lstrip("#").replace(" ", "")
+
+            if len(tag) < 2:
+                raise ValueError("empty hashtag")
+
+            if tag not in cleaned:
+                cleaned.append(tag)
+
+        if len(cleaned) < 3:
+            raise ValueError("at least 3 different hashtags are needed")
+
+        return cleaned
+
+
+AUTOPILOT_POST_SCHEMA = {
+    "name": "autopilot_post",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "caption": {"type": "string"},
+            "description": {"type": "string"},
+            "hashtags": {"type": "array", "items": {"type": "string"}},
+            "image_prompt": {"type": "string"},
+            "language": {"type": "string"},
+        },
+        "required": ["caption", "description", "hashtags", "image_prompt", "language"],
+        "additionalProperties": False,
+    },
+}
+
+POST_RETRIES = 2  # extra attempts after the first one when the output is malformed
+
+
+def parse_autopilot_post(content: str | None) -> dict:
+    """Validates raw model output. Raises ValueError (or ValidationError) when unusable."""
+
+    return AutopilotPost.model_validate(json.loads(content or "")).model_dump()
+
+
 def draft_single_post(request: str, memory: str | None) -> dict:
     client = _get_client()
-
-    shape = (
-        '{"caption": "...", "description": "...", '
-        '"hashtags": "#a #b #c #d #e", "image_prompt": "..."}'
-    )
 
     system = (
         "You are a copywriter for small businesses on Facebook. Write ONE ready-to-publish "
         "post that does exactly what the request asks, using the saved business profile "
-        "when there is one. Never ask questions. If a word or topic is unclear, choose the "
-        "most likely meaning from the context and the user's country. If the business is "
-        "unknown, write a post that fits the request and still sounds like a real business. "
-        f"Answer only with JSON in this exact shape: {shape}. "
-        "The caption is one or two engaging sentences with a clear call to action, the "
-        "description is one or two sentences with more detail, the hashtags are five real, usable "
-        "hashtags in one string (never placeholders such as #YourCity or #YourBusiness), "
-        "and the image_prompt is one detailed sentence describing a "
-        "realistic photograph for the post (subject, setting, lighting, mood) with no text in "
-        "the picture. Write in the language of the request."
+        "when there is one. Never ask questions. If the business is unknown, write a post "
+        "that fits the request and still sounds like a real business. "
+        "Answer only with JSON matching the given schema. "
+        "caption: one or two engaging sentences with a clear call to action (at most 300 characters). "
+        "description: one or two sentences with more detail (at most 600 characters). "
+        "hashtags: 3 to 8 real, usable hashtags, each starting with # (never placeholders "
+        "such as #YourCity or #YourBusiness). "
+        "image_prompt: one detailed sentence describing a realistic photograph for the post "
+        "(subject, setting, lighting, mood) with no text in the picture. "
+        "language: the name of the language the post is written in. "
+        "Write in the language of the request."
     )
 
     info = []
@@ -549,43 +659,78 @@ def draft_single_post(request: str, memory: str | None) -> dict:
     if memory and memory.strip():
         info.append("Saved business profile: " + memory.strip())
 
-    info.append("Request: " + (request.strip() or "A post that promotes my business."))
+    info.append("Request: " + request.strip())
+
+    for attempt in range(POST_RETRIES + 1):
+        completion = _openai_errors(
+            lambda: _chat_create(
+                client,
+                response_format={"type": "json_schema", "json_schema": AUTOPILOT_POST_SCHEMA},
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": (NL + NL).join(info)},
+                ],
+            )
+        )
+
+        try:
+            return parse_autopilot_post(completion.choices[0].message.content)
+        except (ValueError, ValidationError) as exc:
+            print(f"Autopilot post attempt {attempt + 1} was not usable:", type(exc).__name__)
+
+    raise ApiError(
+        status.HTTP_502_BAD_GATEWAY,
+        "AI_BAD_OUTPUT",
+        "The AI did not return a usable post after several tries. Please try again in a moment.",
+    )
+
+
+TOPIC_CHECK_PROMPT = """
+You check topics that a small business owner typed for a Facebook post, before any post
+is written. Decide if the text describes something a business could post about: a
+product, service, offer, event, announcement, greeting or similar, in any language.
+Short and informal topics are fine. Reject text that is random characters, keyboard
+mashing, a meaningless mix of letters and numbers, a test string, or that asks for
+something other than a marketing post. Never guess a topic for meaningless text.
+Answer with JSON only: {"valid": true or false, "reason": "one short sentence for the user"}.
+"""
+
+TOPIC_CHECK_SCHEMA = {
+    "name": "topic_check",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "valid": {"type": "boolean"},
+            "reason": {"type": "string"},
+        },
+        "required": ["valid", "reason"],
+        "additionalProperties": False,
+    },
+}
+
+
+def check_topic_intent(topic: str) -> dict:
+    """Cheap AI check that a topic means something. Returns {"valid": bool, "reason": str}."""
+
+    client = _get_client()
 
     completion = _openai_errors(
-        lambda: client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
-            response_format={"type": "json_object"},
+        lambda: _chat_create(
+            client,
+            response_format={"type": "json_schema", "json_schema": TOPIC_CHECK_SCHEMA},
+            max_tokens=80,
+            temperature=0,
             messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": (NL + NL).join(info)},
+                {"role": "system", "content": TOPIC_CHECK_PROMPT.strip()},
+                {"role": "user", "content": topic},
             ],
         )
     )
 
     try:
         data = json.loads(completion.choices[0].message.content or "{}")
-        caption = str(data["caption"]).strip()
+        return {"valid": data["valid"] is True, "reason": str(data.get("reason", "")).strip()}
     except (ValueError, KeyError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The AI did not return a usable post. Please try again.",
-        )
-
-    if not caption:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The AI returned an empty post. Please try again.",
-        )
-
-    hashtags = data.get("hashtags", "")
-
-    if isinstance(hashtags, list):
-        hashtags = " ".join(str(tag) for tag in hashtags)
-
-    return {
-        "caption": caption,
-        "description": str(data.get("description", "")).strip(),
-        "hashtags": str(hashtags).strip(),
-        "image_prompt": str(data.get("image_prompt", "")).strip(),
-    }
-
+        # If the check itself fails, do not let the topic through.
+        return {"valid": False, "reason": ""}

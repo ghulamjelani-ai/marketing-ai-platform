@@ -1,0 +1,451 @@
+/* Clay + glass layer.
+   Glass for the big surfaces that float over the background (navbar, tabs, cards, toasts),
+   soft clay for the things you touch (buttons, inputs, tabs, chips, icons).
+   Imported last (main.jsx). Every rule starts with :root[data-theme] so it outranks the
+   light-mode rules in polish.css; colours come from the tokens below, per theme. */
+
+:root[data-theme="dark"] {
+  --glass-1: rgba(58, 28, 36, 0.58);
+  --glass-2: rgba(34, 16, 22, 0.42);
+  --glass-edge: rgba(255, 228, 200, 0.14);
+  --glass-hi: rgba(255, 240, 222, 0.12);
+  --glass-shadow: rgba(0, 0, 0, 0.45);
+
+  --clay: #34202a;
+  --clay-2: #26151c;
+  --clay-well: rgba(10, 3, 6, 0.38);
+  --clay-drop: rgba(0, 0, 0, 0.5);
+  --clay-lift: rgba(255, 214, 190, 0.05);
+  --clay-in-hi: rgba(255, 236, 214, 0.13);
+  --clay-in-lo: rgba(0, 0, 0, 0.42);
+
+  --wine-1: #c0475a;
+  --wine-2: #7b1e2b;
+  --wine-glow: rgba(192, 71, 90, 0.5);
+  --on-wine: #fff1e4;
+
+  --blob-1: rgba(156, 42, 59, 0.55);
+  --blob-2: rgba(214, 160, 110, 0.22);
+  --blob-3: rgba(120, 52, 110, 0.32);
+}
+
+:root[data-theme="light"] {
+  --glass-1: rgba(255, 255, 255, 0.66);
+  --glass-2: rgba(255, 246, 232, 0.44);
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-hi: rgba(255, 255, 255, 0.9);
+  --glass-shadow: rgba(123, 30, 43, 0.13);
+
+  --clay: #fbf1e2;
+  --clay-2: #f2e0c8;
+  --clay-well: rgba(123, 30, 43, 0.06);
+  --clay-drop: rgba(123, 30, 43, 0.17);
+  --clay-lift: rgba(255, 255, 255, 0.95);
+  --clay-in-hi: rgba(255, 255, 255, 0.95);
+  --clay-in-lo: rgba(150, 90, 60, 0.18);
+
+  --wine-1: #b8394c;
+  --wine-2: #7b1e2b;
+  --wine-glow: rgba(156, 42, 59, 0.32);
+  --on-wine: #fff7ee;
+
+  --blob-1: rgba(255, 178, 150, 0.6);
+  --blob-2: rgba(236, 196, 140, 0.5);
+  --blob-3: rgba(232, 160, 190, 0.38);
+}
+
+/* ---------- background: soft colour fields for the glass to blur ---------- */
+:root[data-theme] .dx-page,
+:root[data-theme] .au-page,
+:root[data-theme] .in-page {
+  background:
+    radial-gradient(42rem circle at 6% 4%, var(--blob-1), transparent 60%),
+    radial-gradient(36rem circle at 96% 30%, var(--blob-3), transparent 60%),
+    radial-gradient(40rem circle at 60% 105%, var(--blob-2), transparent 60%),
+    var(--bg);
+}
+:root[data-theme] .dx-bg-orb { filter: blur(80px); opacity: 0.9; }
+:root[data-theme] .dx-grid-bg { opacity: 0.12; }
+
+/* ---------- glass surfaces ---------- */
+:root[data-theme] .dx-card,
+:root[data-theme] .au-card,
+:root[data-theme] .in-card,
+:root[data-theme] .dx-tabs,
+:root[data-theme] .dx-fbbar,
+:root[data-theme] .toast {
+  background: linear-gradient(150deg, var(--glass-1), var(--glass-2));
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    0 22px 50px -12px var(--glass-shadow),
+    inset 0 1px 0 var(--glass-hi),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+:root[data-theme] .dx-card { border-radius: 1.75rem; }
+:root[data-theme] .au-card { border-radius: 2rem; }
+:root[data-theme] .in-card { border-radius: 1.5rem; }
+
+:root[data-theme] .dx-hover:hover,
+:root[data-theme] .dx-tilt:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--glass-edge));
+  box-shadow:
+    0 30px 60px -14px var(--glass-shadow),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 1px 0 var(--glass-hi);
+}
+
+/* the hero is glass with a warm tint instead of the spinning border */
+:root[data-theme] .dx-hero {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--wine-1) 22%, transparent), transparent 55%),
+    linear-gradient(150deg, var(--glass-1), var(--glass-2));
+  border: 1px solid var(--glass-edge);
+  animation: dx-rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+:root[data-theme] .dx-flow { background: linear-gradient(150deg, var(--glass-1), var(--glass-2)); }
+
+/* navbar: a frosted bar */
+:root[data-theme] .dx-nav {
+  background: linear-gradient(180deg, var(--glass-1), var(--glass-2));
+  border-bottom: 1px solid var(--glass-edge);
+  box-shadow: 0 10px 30px -18px var(--glass-shadow), inset 0 -1px 0 var(--glass-hi);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+}
+
+/* section tabs and the Facebook bar */
+:root[data-theme] .dx-tabs { border-radius: 1.4rem; padding: 0.45rem; }
+:root[data-theme] .dx-fbbar { border-radius: 1.4rem; padding: 0.85rem 1.1rem; }
+
+:root[data-theme] .dx-tab { border-radius: 1rem; transition: background 0.25s, color 0.25s, box-shadow 0.3s, transform 0.25s; }
+:root[data-theme] .dx-tab:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); transform: translateY(-1px); }
+:root[data-theme] .dx-tab.on {
+  color: var(--on-wine);
+  background: linear-gradient(145deg, var(--wine-1), var(--wine-2));
+  box-shadow:
+    0 8px 18px -6px var(--wine-glow),
+    inset 2px 2px 4px rgba(255, 210, 210, 0.35),
+    inset -2px -3px 6px rgba(40, 0, 10, 0.4);
+}
+:root[data-theme] .dx-tab-count {
+  background: var(--on-wine);
+  color: var(--wine-2);
+  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.15);
+}
+:root[data-theme] .dx-tab:not(.on) .dx-tab-count { background: linear-gradient(145deg, var(--wine-1), var(--wine-2)); color: var(--on-wine); }
+
+/* toasts */
+:root[data-theme] .toast { border-radius: 1.2rem; }
+:root[data-theme] .toast-icon {
+  box-shadow: inset 1px 2px 3px rgba(255, 255, 255, 0.45), inset -1px -2px 3px rgba(0, 0, 0, 0.25), 0 4px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------- clay: primary buttons ---------- */
+:root[data-theme] .dx-btn,
+:root[data-theme] .au-btn,
+:root[data-theme] .in-btn,
+:root[data-theme] .dx-assist-tab.on,
+:root[data-theme] .ap-badge,
+:root[data-theme] .dx-bubble-user {
+  color: var(--on-wine);
+  background: linear-gradient(145deg, var(--wine-1), var(--wine-2));
+  box-shadow:
+    0 12px 24px -8px var(--wine-glow),
+    inset 3px 3px 6px rgba(255, 205, 205, 0.32),
+    inset -3px -4px 8px rgba(40, 0, 10, 0.45);
+}
+:root[data-theme] .dx-btn,
+:root[data-theme] .au-btn,
+:root[data-theme] .in-btn { transition: transform 0.2s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.25s, opacity 0.2s; }
+:root[data-theme] .au-btn { border-radius: 1rem; }
+:root[data-theme] .dx-btn:hover:not(:disabled),
+:root[data-theme] .au-btn:hover:not(:disabled),
+:root[data-theme] .in-btn:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 18px 30px -10px var(--wine-glow),
+    inset 3px 3px 6px rgba(255, 205, 205, 0.36),
+    inset -3px -4px 8px rgba(40, 0, 10, 0.45);
+}
+:root[data-theme] .dx-btn:active:not(:disabled),
+:root[data-theme] .au-btn:active:not(:disabled),
+:root[data-theme] .in-btn:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: inset 3px 4px 8px rgba(40, 0, 10, 0.5), inset -2px -2px 5px rgba(255, 205, 205, 0.2);
+}
+
+/* ---------- clay: soft buttons ---------- */
+:root[data-theme] .dx-btn-ghost,
+:root[data-theme] .au-google,
+:root[data-theme] .in-ghost,
+:root[data-theme] .dx-btn-danger,
+:root[data-theme] .dx-assist-tab:not(.on) {
+  border: 1px solid transparent;
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  box-shadow:
+    6px 7px 16px -4px var(--clay-drop),
+    -4px -4px 12px var(--clay-lift),
+    inset 2px 2px 4px var(--clay-in-hi),
+    inset -2px -3px 6px var(--clay-in-lo);
+  transition: transform 0.2s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.25s, color 0.2s;
+}
+:root[data-theme] .dx-btn-ghost,
+:root[data-theme] .in-ghost { color: var(--accent); }
+:root[data-theme] .au-google { color: var(--text); border-radius: 1rem; }
+:root[data-theme] .dx-btn-danger { color: var(--err-text); }
+:root[data-theme] .dx-btn-ghost:hover:not(:disabled),
+:root[data-theme] .au-google:hover:not(:disabled),
+:root[data-theme] .in-ghost:hover,
+:root[data-theme] .dx-btn-danger:hover:not(:disabled),
+:root[data-theme] .dx-assist-tab:not(.on):hover {
+  border-color: transparent;
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  transform: translateY(-2px);
+  box-shadow:
+    9px 11px 20px -6px var(--clay-drop),
+    -4px -4px 12px var(--clay-lift),
+    inset 2px 2px 4px var(--clay-in-hi),
+    inset -2px -3px 6px var(--clay-in-lo);
+}
+:root[data-theme] .dx-btn-ghost:active:not(:disabled),
+:root[data-theme] .au-google:active:not(:disabled),
+:root[data-theme] .in-ghost:active,
+:root[data-theme] .dx-btn-danger:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: inset 3px 3px 7px var(--clay-in-lo), inset -2px -2px 5px var(--clay-in-hi);
+}
+
+/* ---------- clay: pressed-in wells for inputs ---------- */
+:root[data-theme] .dx-input,
+:root[data-theme] .au-input,
+:root[data-theme] .dx-page-switch select {
+  border: 1px solid transparent;
+  background: var(--clay-well);
+  box-shadow: inset 3px 3px 7px var(--clay-in-lo), inset -3px -3px 7px var(--clay-in-hi);
+  border-radius: 1rem;
+}
+:root[data-theme] .dx-page-switch select { border-radius: 0.9rem; }
+:root[data-theme] .dx-input:focus,
+:root[data-theme] .au-input:focus,
+:root[data-theme] .dx-page-switch select:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: var(--clay-well);
+  box-shadow:
+    inset 3px 3px 7px var(--clay-in-lo),
+    inset -3px -3px 7px var(--clay-in-hi),
+    0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+:root[data-theme] .dx-drop {
+  border-radius: 1.4rem;
+  background: var(--clay-well);
+  box-shadow: inset 4px 4px 10px var(--clay-in-lo), inset -4px -4px 10px var(--clay-in-hi);
+}
+:root[data-theme] .dx-drop:hover { background: color-mix(in srgb, var(--accent) 8%, var(--clay-well)); }
+
+/* ---------- clay: icons, badges, chips ---------- */
+:root[data-theme] .dx-feature-icon,
+:root[data-theme] .dx-node-ic,
+:root[data-theme] .in-card-ic {
+  border: 0;
+  border-radius: 1.1rem;
+  background: linear-gradient(145deg, var(--wine-1), var(--wine-2));
+  box-shadow:
+    0 10px 20px -6px var(--wine-glow),
+    inset 2px 3px 5px rgba(255, 205, 205, 0.38),
+    inset -3px -4px 7px rgba(40, 0, 10, 0.45);
+}
+:root[data-theme] .dx-node-ic { border-radius: 50%; }
+
+:root[data-theme] .dx-badge-ok,
+:root[data-theme] .dx-live {
+  border: 1px solid transparent;
+  background: linear-gradient(145deg, rgba(74, 222, 128, 0.2), rgba(22, 163, 74, 0.1));
+  box-shadow: 4px 5px 12px -4px var(--clay-drop), inset 2px 2px 4px rgba(255, 255, 255, 0.18), inset -2px -2px 5px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme] .dx-chip {
+  border: 1px solid transparent;
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  box-shadow: 3px 3px 8px -2px var(--clay-drop), inset 1px 1px 2px var(--clay-in-hi), inset -1px -2px 3px var(--clay-in-lo);
+}
+:root[data-theme] .dx-avatar { box-shadow: 4px 5px 12px -3px var(--clay-drop), -2px -2px 6px var(--clay-lift); }
+
+/* ---------- clay: list rows and small panels inside glass ---------- */
+:root[data-theme] .dx-row,
+:root[data-theme] .sp-item,
+:root[data-theme] .dx-draft,
+:root[data-theme] .ap-step,
+:root[data-theme] .dx-best,
+:root[data-theme] .dx-assist,
+:root[data-theme] .dx-bubble-ai,
+:root[data-theme] .dx-preview {
+  border: 1px solid transparent;
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  box-shadow:
+    6px 8px 18px -8px var(--clay-drop),
+    -3px -3px 10px var(--clay-lift),
+    inset 2px 2px 4px var(--clay-in-hi),
+    inset -2px -3px 6px var(--clay-in-lo);
+}
+:root[data-theme] .dx-row,
+:root[data-theme] .sp-item,
+:root[data-theme] .dx-draft,
+:root[data-theme] .ap-step { border-radius: 1.2rem; }
+:root[data-theme] .dx-bubble-ai { border-radius: 1.3rem 1.3rem 1.3rem 0.4rem; }
+:root[data-theme] .dx-bubble-user { border-radius: 1.3rem 1.3rem 0.4rem 1.3rem; }
+:root[data-theme] .dx-row:hover,
+:root[data-theme] .sp-item:hover {
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  box-shadow:
+    9px 12px 22px -10px var(--clay-drop),
+    -3px -3px 10px var(--clay-lift),
+    inset 2px 2px 4px var(--clay-in-hi),
+    inset -2px -3px 6px var(--clay-in-lo);
+}
+:root[data-theme] .ap-step.run {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 16%, var(--clay)), var(--clay-2));
+}
+:root[data-theme] .ap-step.done,
+:root[data-theme] .ap-step.skipped { border-color: rgba(74, 222, 128, 0.45); }
+:root[data-theme] .ap-step.error { border-color: rgba(248, 113, 113, 0.6); background: var(--err-bg); }
+
+/* alerts: tinted glass */
+:root[data-theme] .dx-alert,
+:root[data-theme] .au-alert {
+  border-radius: 1.2rem;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 26px -14px var(--glass-shadow), inset 0 1px 0 var(--glass-hi);
+}
+
+/* ---------- clay theme switch ---------- */
+:root[data-theme] .th-toggle {
+  border: 1px solid transparent;
+  background: var(--clay-well);
+  box-shadow: inset 3px 3px 6px var(--clay-in-lo), inset -3px -3px 6px var(--clay-in-hi);
+}
+:root[data-theme] .th-knob {
+  background: linear-gradient(145deg, var(--wine-1), var(--wine-2));
+  box-shadow: 0 4px 8px -2px var(--wine-glow), inset 1px 2px 3px rgba(255, 205, 205, 0.4), inset -1px -2px 3px rgba(40, 0, 10, 0.45);
+}
+
+/* ---------- keyboard focus stays visible on every control ---------- */
+:root[data-theme] .dx-btn:focus-visible,
+:root[data-theme] .dx-btn-ghost:focus-visible,
+:root[data-theme] .dx-btn-danger:focus-visible,
+:root[data-theme] .au-btn:focus-visible,
+:root[data-theme] .au-google:focus-visible,
+:root[data-theme] .in-btn:focus-visible,
+:root[data-theme] .in-ghost:focus-visible,
+:root[data-theme] .th-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* ---------- fallbacks ---------- */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-theme] .dx-card,
+  :root[data-theme] .au-card,
+  :root[data-theme] .in-card,
+  :root[data-theme] .dx-tabs,
+  :root[data-theme] .dx-fbbar,
+  :root[data-theme] .toast,
+  :root[data-theme] .dx-nav { background: var(--card); }
+}
+
+/* phones: lighter blur keeps scrolling smooth */
+@media (max-width: 640px) {
+  :root[data-theme] .dx-card,
+  :root[data-theme] .dx-tabs,
+  :root[data-theme] .dx-fbbar {
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+  :root[data-theme] .dx-card { border-radius: 1.4rem; }
+
+  /* the logo stays on one line; the tab row fades at its edge to show it scrolls */
+  :root[data-theme] .dx-brand { font-size: 1.15rem; white-space: nowrap; }
+  :root[data-theme] .dx-tagline { display: none; }
+  :root[data-theme] .dx-tabs {
+    -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] .dx-btn,
+  :root[data-theme] .au-btn,
+  :root[data-theme] .in-btn,
+  :root[data-theme] .dx-btn-ghost,
+  :root[data-theme] .au-google,
+  :root[data-theme] .in-ghost,
+  :root[data-theme] .dx-btn-danger,
+  :root[data-theme] .dx-tab { transition: none; }
+}
+
+/* ---------- voice: mic button, status bubble, Listen ---------- */
+.dx-voice { position: relative; display: inline-flex; flex-shrink: 0; }
+:root[data-theme] .dx-mic {
+  display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid transparent; color: var(--accent);
+  background: linear-gradient(145deg, var(--clay), var(--clay-2));
+  box-shadow: 5px 6px 14px -4px var(--clay-drop), -3px -3px 10px var(--clay-lift), inset 2px 2px 4px var(--clay-in-hi), inset -2px -3px 6px var(--clay-in-lo);
+  transition: transform 0.2s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.25s, color 0.2s;
+}
+:root[data-theme] .dx-mic:hover:not(:disabled) { transform: translateY(-2px); }
+:root[data-theme] .dx-mic:disabled { opacity: 0.55; cursor: not-allowed; }
+:root[data-theme] .dx-mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+:root[data-theme] .dx-mic.on {
+  color: var(--on-wine);
+  background: linear-gradient(145deg, var(--wine-1), var(--wine-2));
+  animation: dx-mic-pulse 1.4s ease-out infinite;
+}
+@keyframes dx-mic-pulse {
+  0% { box-shadow: 0 0 0 0 var(--wine-glow), inset 2px 2px 4px rgba(255, 205, 205, 0.35); }
+  100% { box-shadow: 0 0 0 14px transparent, inset 2px 2px 4px rgba(255, 205, 205, 0.35); }
+}
+.dx-voice-status,
+.dx-voice-error {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 5; margin: 0;
+  width: max-content; max-width: min(19rem, 80vw); padding: 0.5rem 0.8rem; border-radius: 0.9rem;
+  font-size: 0.78rem; line-height: 1.35; color: var(--text);
+  background: linear-gradient(150deg, var(--glass-1), var(--glass-2));
+  border: 1px solid var(--glass-edge);
+  box-shadow: 0 12px 26px -12px var(--glass-shadow);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.dx-voice-status:empty { display: none; }
+.dx-voice-error { color: var(--err-text); }
+.dx-said { opacity: 0.85; }
+.dx-listen {
+  display: inline-flex; align-items: center; gap: 0.3rem; margin-top: 0.6rem; padding: 0.25rem 0.7rem;
+  border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: transparent; color: var(--accent); font-size: 0.72rem; font-weight: 600; cursor: pointer;
+}
+.dx-listen:hover,
+.dx-listen.on { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.dx-listen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] .dx-mic.on { animation: none; }
+}
+
+/* ---------- brand mark ---------- */
+.brand-mark {
+  flex-shrink: 0;
+  border-radius: 30%;
+  filter: drop-shadow(0 6px 10px rgba(123, 30, 43, 0.35));
+  transition: transform 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+a:hover > .brand-mark,
+.in-brand:hover > .brand-mark { transform: rotate(-6deg) scale(1.06); }
+.brand-spark { transform-origin: 49px 14px; animation: brand-spark 3.2s ease-in-out infinite; }
+@keyframes brand-spark { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.25); opacity: 0.8; } }
+.au-logo { display: inline-flex; align-items: center; gap: 0.6rem; }
+@media (prefers-reduced-motion: reduce) {
+  .brand-spark { animation: none; }
+  .brand-mark { transition: none; }
+}

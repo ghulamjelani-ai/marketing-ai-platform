@@ -1,0 +1,40 @@
+# === Secrets / credentials (NEVER commit) ===
+.env
+*.env
+!.env.example
+backend/.env
+frontend/.env
+backend/firebase-service-account.json
+backend/.token_key
+*.pem
+*.key
+
+# === Python ===
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/venv/
+venv/
+
+# === Node / frontend ===
+node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+# === Logs / test leftovers ===
+*.log
+backend/backend_output.log
+
+# === Editor / OS ===
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# === Personal study / exam material (not part of the project) ===
+DL_EXAM_STUDY_GUIDE.md
+DL_Exam_Solved_Answers.pdf
+PROJECT_STUDY_GUIDE.md
+PROJECT_HANDOFF.md
+STUDY_GUIDE_ROMAN_URDU.md

@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import ThemeToggle from "./ThemeToggle";
+import BrandMark from "./BrandMark";
+import useDocumentTitle from "../hooks/useDocumentTitle";
 import "../auth.css";
 import "../automation.css";
 
@@ -9,7 +11,10 @@ const SLIDES = [
   ["From Idea To", "Published Post"],
 ];
 
-export default function AuthLayout({ title, subtitle, error, children }) {
+// error: what went wrong (red). notice: good news such as "Password changed" (green).
+export default function AuthLayout({ title, subtitle, error, notice, children }) {
+  useDocumentTitle(title);
+
   return (
     <div className="au-page">
       <ThemeToggle className="th-fixed" />
@@ -57,6 +62,7 @@ export default function AuthLayout({ title, subtitle, error, children }) {
           </div>
 
           <Link to="/" className="au-logo" style={{ textDecoration: "none" }}>
+            <BrandMark size={34} />
             Marketing AI
           </Link>
 
@@ -80,7 +86,19 @@ export default function AuthLayout({ title, subtitle, error, children }) {
         <div className="au-form-wrap">
           <h1 className="au-title font-classic">{title}</h1>
           <p className="au-sub">{subtitle}</p>
-          {error ? <div className="au-error">{error}</div> : <div />}
+          {error ? (
+            <div className="au-alert au-error" role="alert" key={String(error)}>
+              <span className="au-alert-icon" aria-hidden="true">!</span>
+              <span>{error}</span>
+            </div>
+          ) : notice ? (
+            <div className="au-alert au-success" role="status" key={String(notice)}>
+              <span className="au-alert-icon" aria-hidden="true">&#10003;</span>
+              <span>{notice}</span>
+            </div>
+          ) : (
+            <div />
+          )}
           {children}
         </div>
       </div>

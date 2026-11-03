@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
+import useWorkspace from "../hooks/useWorkspace";
 import {
   cancelAllScheduled,
   cancelScheduled,
+  clearAllEarlier,
+  clearEarlier,
   getScheduled,
 } from "../api/activity";
-import "../dashboard.css";
-import "../polish.css";
+import { toast } from "../utils/toast";
+import { canEdit } from "../utils/editPost";
+import EditScheduledPost from "../components/EditScheduledPost";
 
 const STATUS_LABEL = {
   published: "Published",
@@ -25,22 +28,25 @@ const showMoment = (iso) =>
   });
 
 export default function Scheduled() {
+  const { refreshActivity } = useWorkspace();
   const [data, setData] = useState({ upcoming: [], past: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [editingId, setEditingId] = useState("");
 
   const load = useCallback(async () => {
     try {
       const result = await getScheduled();
       setData({ upcoming: result.upcoming || [], past: result.past || [] });
       setError("");
+      refreshActivity();
     } catch (err) {
       setError(err.message || "Could not load your scheduled posts.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshActivity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,10 +108,46 @@ export default function Scheduled() {
     }
   }
 
+  // Finished posts only leave this list; Facebook and the History are not changed.
+  async function clearOne(id) {
+    setBusyId(id);
+    setError("");
+
+    try {
+      await clearEarlier(id);
+      setData((value) => ({ ...value, past: value.past.filter((item) => item.id !== id) }));
+      toast.success("Cleared", "The post was removed from this list.");
+      await load();
+    } catch (err) {
+      toast.error("Could not clear the post", err.message);
+      await load();
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function clearEverythingEarlier() {
+    if (!window.confirm("Clear all earlier posts from this list? Published posts stay in your History.")) return;
+
+    setBusyId("earlier");
+    setError("");
+
+    try {
+      const result = await clearAllEarlier();
+      setData((value) => ({ ...value, past: [] }));
+      toast.success("List cleared", `${result.cleared} earlier ${result.cleared === 1 ? "post was" : "posts were"} cleared.`);
+      await load();
+    } catch (err) {
+      toast.error("Could not clear the list", err.message);
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  const clearing = busyId === "earlier";
+
   return (
-    <div className="dx-page min-h-screen">
-      <Navbar />
-      <main className="sp-page">
+    <section className="sp-page">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="dx-eyebrow">Your queue</p>
@@ -117,9 +159,6 @@ export default function Scheduled() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link to="/home" className="dx-btn-ghost">
-              &larr; Back to dashboard
-            </Link>
             {data.upcoming.length > 0 && (
               <button
                 type="button"
@@ -140,53 +179,104 @@ export default function Scheduled() {
           <div className="dx-card rounded-3xl sp-empty mt-8">
             <p className="dx-title text-xl">Nothing is scheduled</p>
             <p className="dx-muted text-sm mt-2">
-              Use Autopilot or the 7-day plan on the dashboard to schedule
-              posts.
+              Use <Link to="/autopilot" className="dx-accent-text">Autopilot</Link> or
+              the <Link to="/plan" className="dx-accent-text">7-day plan</Link> to
+              schedule posts.
             </p>
           </div>
         )}
 
         <div className="mt-8 space-y-3">
           {data.upcoming.map((item) => (
-            <div key={item.id} className="sp-item">
-              <div className="min-w-0">
-                <p className="sp-when">
-                  🗓️ {showMoment(item.run_at)}
-                  {item.with_image && " · with picture"}
-                </p>
-                <p className="sp-text">{item.message}</p>
-              </div>
-              <button
-                type="button"
-                className="dx-btn-danger"
-                onClick={() => cancelOne(item.id)}
-                disabled={busyId === item.id || busyId === "all"}
-              >
-                Remove
-              </button>
+            <div key={item.id} className={`sp-item ${editingId === item.id ? "sp-editing" : ""}`}>
+              {editingId === item.id ? (
+                <EditScheduledPost
+                  item={item}
+                  onCancel={() => setEditingId("")}
+                  onSaved={() => {
+                    setEditingId("");
+                    load();
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="min-w-0">
+                    <p className="sp-when">
+                      🗓️ {showMoment(item.run_at)}
+                      {item.with_image && " · with picture"}
+                    </p>
+                    <p className="sp-text">{item.message}</p>
+                  </div>
+                  <div className="sp-actions">
+                    <button
+                      type="button"
+                      className="dx-btn-ghost dx-btn-sm"
+                      onClick={() => setEditingId(item.id)}
+                      disabled={!canEdit(item.run_at) || busyId === item.id || busyId === "all"}
+                      title={
+                        canEdit(item.run_at)
+                          ? "Change the text, time or picture"
+                          : "This post goes out in less than 10 minutes and can no longer be changed"
+                      }
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="dx-btn-danger"
+                      onClick={() => cancelOne(item.id)}
+                      disabled={busyId === item.id || busyId === "all"}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
 
         {data.past.length > 0 && (
           <>
-            <h2 className="dx-title text-lg mt-10">Earlier</h2>
+            <div className="mt-10 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="dx-title text-lg">Earlier</h2>
+              {data.past.length > 1 && (
+                <button
+                  type="button"
+                  className="dx-btn-ghost dx-btn-sm"
+                  onClick={clearEverythingEarlier}
+                  disabled={clearing || busyId !== ""}
+                >
+                  {clearing ? "Clearing..." : "Clear all"}
+                </button>
+              )}
+            </div>
             <div className="mt-3 space-y-2">
               {data.past.map((item) => (
-                <div key={item.id} className="sp-item" style={{ opacity: 0.75 }}>
+                <div key={item.id} className="sp-item sp-past">
                   <div className="min-w-0">
                     <p className="sp-when">{showMoment(item.run_at)}</p>
                     <p className="sp-text">{item.message}</p>
                   </div>
-                  <span className="dx-chip">
-                    {STATUS_LABEL[item.status] || item.status}
-                  </span>
+                  <div className="sp-past-actions">
+                    <span className="dx-chip">
+                      {STATUS_LABEL[item.status] || item.status}
+                    </span>
+                    <button
+                      type="button"
+                      className="dx-btn-ghost dx-btn-sm"
+                      onClick={() => clearOne(item.id)}
+                      disabled={busyId === item.id || clearing}
+                      aria-label={`Clear this ${(STATUS_LABEL[item.status] || item.status).toLowerCase()} post from the list`}
+                    >
+                      {busyId === item.id ? "Clearing..." : "Clear"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           </>
         )}
-      </main>
-    </div>
+    </section>
   );
 }

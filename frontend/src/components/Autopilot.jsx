@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import VoiceButton from "./VoiceButton";
 import { Link } from "react-router-dom";
 import {
   autopilotPost,
@@ -8,7 +9,8 @@ import {
 } from "../api/activity";
 import { publishFacebookPhoto, publishFacebookPost } from "../api/facebook";
 import { generateImage } from "../api/images";
-import { postToText } from "../utils/parsePlan";
+import { autopilotPostText, isAutopilotPost } from "../utils/autopilotPost";
+import { MAX_LENGTH, validateTopic } from "../utils/validateTopic";
 import "../polish.css";
 
 const STEPS = [
@@ -18,6 +20,25 @@ const STEPS = [
 ];
 
 const fresh = () => STEPS.map(() => ({ state: "wait", note: "" }));
+
+const STEP_FAILED = [
+  "Could not write the post",
+  "Could not create the picture",
+  "Could not publish the post",
+];
+
+const newKey = () =>
+  globalThis.crypto?.randomUUID?.() ||
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+// Browser network failures arrive as TypeError("Failed to fetch").
+function friendlyError(err) {
+  if (err instanceof TypeError || /failed to fetch|network ?error/i.test(err?.message || "")) {
+    return "Could not reach the server. Check your connection and try again.";
+  }
+
+  return err?.message || "Autopilot could not finish.";
+}
 
 // The next time today (or tomorrow) that is clock time `time`, at least 25 minutes ahead.
 function nextOccurrence(time) {
@@ -54,9 +75,33 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [removing, setRemoving] = useState(false);
+  const [touched, setTouched] = useState(false);
+
+  const [failedStep, setFailedStep] = useState(-1);
+
+  // "Let me review first": after the post and picture are made, the run waits for the user.
+  const [reviewFirst, setReviewFirst] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [draftImage, setDraftImage] = useState(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const reviewedRef = useRef(false);
 
   const cancelRef = useRef(false);
   const imageUrlRef = useRef("");
+  // Guards against a double click before React re-renders the disabled button.
+  const runningRef = useRef(false);
+  // What finished steps produced, so Retry continues from the failed step.
+  const doneRef = useRef({ post: null, text: "", image: null });
+  // One key per run: Facebook gets the post at most once, even if a request is repeated.
+  const keyRef = useRef("");
+
+  const draftPreview = useMemo(() => (draftImage ? URL.createObjectURL(draftImage) : ""), [draftImage]);
+
+  useEffect(() => () => {
+    if (draftPreview) URL.revokeObjectURL(draftPreview);
+  }, [draftPreview]);
 
   function mark(index, state, note = "") {
     setSteps((list) =>
@@ -72,49 +117,90 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
     }
   }
 
-  async function run() {
+  // `from` is 0 for a new run, or the index of a failed step to retry.
+  async function run(from = 0) {
+    // Nothing is sent to the AI or Facebook unless the topic is valid and consent is given.
+    if (validateTopic(request) || !allowed || runningRef.current) return;
+
+    runningRef.current = true;
+    setRunning(true);
     setError("");
     setNotice("");
-    setResult(null);
-    setSteps(fresh());
+    setFailedStep(-1);
     cancelRef.current = false;
-    setRunning(true);
 
-    let current = 0;
+    if (from === 0) {
+      reviewedRef.current = false;
+      setReviewing(false);
+      keyRef.current = newKey();
+      doneRef.current = { post: null, text: "", image: null };
+      setResult(null);
+      setSteps(fresh());
+    } else {
+      setSteps((list) =>
+        list.map((step, i) => (i >= from ? { state: "wait", note: "" } : step)),
+      );
+    }
+
+    let current = from;
 
     try {
       // 1 - write
-      mark(0, "run", "Reading your request...");
-      const { post } = await autopilotPost(request.trim());
-      const text = postToText(post);
-      mark(0, "done", post.caption);
-      checkCancelled();
+      if (current === 0) {
+        mark(0, "run", "Reading your request...");
+        const { post } = await autopilotPost(request.trim());
 
-      // 2 - picture
-      current = 1;
-      let image = null;
+        if (!isAutopilotPost(post)) {
+          throw new Error("The AI did not return a usable post. Please try again.");
+        }
 
-      if (withImage) {
-        mark(1, "run", "This takes about 30 to 60 seconds for the best quality...");
-        image = await generateImage(post.image_prompt || post.caption);
-        mark(1, "done", "Picture ready");
-      } else {
-        mark(1, "skipped", "Skipped");
+        doneRef.current.post = post;
+        doneRef.current.text = autopilotPostText(post);
+        mark(0, "done", post.caption);
+        checkCancelled();
+        current = 1;
       }
 
-      checkCancelled();
+      const { post } = doneRef.current;
+
+      // 2 - picture (a failed picture stops the run: no broken post is published)
+      if (current === 1) {
+        if (withImage) {
+          mark(1, "run", "This takes about 30 to 60 seconds for the best quality...");
+          doneRef.current.image = await generateImage(post.image_prompt || post.caption);
+          mark(1, "done", "Picture ready");
+        } else {
+          doneRef.current.image = null;
+          mark(1, "skipped", "Skipped");
+        }
+
+        checkCancelled();
+        current = 2;
+      }
+
+      // The user asked to check the post first: stop here until they say it is fine.
+      if (reviewFirst && !reviewedRef.current) {
+        setDraftText(doneRef.current.text);
+        setDraftImage(doneRef.current.image);
+        setReviewError("");
+        setReviewing(true);
+        setNotice("Your post is ready. Read it, change anything you like, then continue.");
+        return;
+      }
+
+      const { image, text: finalText } = doneRef.current;
 
       // 3 - publish or schedule (nothing is published after Stop was pressed)
-      current = 2;
       let outcome;
+      const idempotencyKey = keyRef.current;
 
       if (mode === "now") {
         mark(2, "run", "Posting on " + (pageName || "your Page") + "...");
 
         if (image) {
-          await publishFacebookPhoto(text, image);
+          await publishFacebookPhoto(finalText, image, { idempotencyKey });
         } else {
-          await publishFacebookPost(text);
+          await publishFacebookPost(finalText, { idempotencyKey });
         }
 
         outcome = { kind: "published", label: "Published just now" };
@@ -126,9 +212,10 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
         const moment = nextOccurrence(best.times[0].time);
 
         const saved = await schedulePost({
-          message: text,
+          message: finalText,
           runAt: moment.toISOString(),
           image,
+          idempotencyKey,
         });
 
         outcome = {
@@ -145,17 +232,60 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
 
       imageUrlRef.current = image ? URL.createObjectURL(image) : "";
 
-      setResult({ text, imageUrl: imageUrlRef.current, ...outcome });
+      setResult({ text: finalText, imageUrl: imageUrlRef.current, ...outcome });
       onDone(outcome.kind);
     } catch (err) {
       if (err.cancelled) {
         setNotice("Stopped. Nothing was published.");
       } else {
-        mark(current, "error", "Something went wrong");
-        setError(err.message || "Autopilot could not finish.");
+        const message = friendlyError(err);
+
+        mark(current, "error", STEP_FAILED[current]);
+        setFailedStep(current);
+        setError(
+          current < 2 ? message + " Nothing was published." : message,
+        );
       }
     } finally {
+      runningRef.current = false;
       setRunning(false);
+    }
+  }
+
+  function continueAfterReview() {
+    if (!draftText.trim() && !draftImage) {
+      setReviewError("A post needs some text or a picture.");
+      return;
+    }
+
+    doneRef.current.text = draftText.trim();
+    doneRef.current.image = draftImage;
+    reviewedRef.current = true;
+    setReviewing(false);
+    setNotice("");
+    run(2);
+  }
+
+  function discardReview() {
+    setReviewing(false);
+    setNotice("Cancelled. Nothing was published.");
+    setSteps((list) => list.map((step, i) => (i === 2 ? { state: "wait", note: "" } : step)));
+  }
+
+  async function makeNewPicture() {
+    const post = doneRef.current.post;
+
+    if (!post) return;
+
+    setRegenerating(true);
+    setReviewError("");
+
+    try {
+      setDraftImage(await generateImage(post.image_prompt || post.caption));
+    } catch (err) {
+      setReviewError(friendlyError(err));
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -177,7 +307,9 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
     }
   }
 
-  const ready = facebookConnected && allowed && !running;
+  const topicError = validateTopic(request);
+  const showTopicError = touched && Boolean(topicError);
+  const ready = facebookConnected && allowed && !running && !topicError;
   const progress =
     steps.filter((step) => step.state === "done" || step.state === "skipped")
       .length / STEPS.length;
@@ -205,18 +337,43 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
           <div>
-            <label className="dx-label block text-sm mb-2">
-              What is the post about?
-            </label>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <label className="dx-label block text-sm" htmlFor="ap-topic">
+                What is the post about?
+              </label>
+              <VoiceButton
+                label="Say what the post is about"
+                disabled={running}
+                onText={(text) => {
+                  setRequest((current) => (current.trim() ? `${current.trim()} ${text}` : text).slice(0, MAX_LENGTH));
+                  setTouched(true);
+                  setFailedStep(-1);
+                }}
+              />
+            </div>
             <textarea
+              id="ap-topic"
               value={request}
-              onChange={(event) => setRequest(event.target.value)}
+              onChange={(event) => {
+                setRequest(event.target.value);
+                setTouched(true);
+                setFailedStep(-1);
+              }}
+              onBlur={() => setTouched(true)}
               rows={4}
-              maxLength={2000}
+              maxLength={MAX_LENGTH}
               disabled={running}
-              placeholder="Example: A limited time offer for new customers this weekend. (Leave empty to promote your business using what the assistant remembers.)"
+              aria-invalid={showTopicError}
+              aria-describedby="ap-topic-error"
+              placeholder="Example: A limited time offer for new customers this weekend."
               className="dx-input resize-y"
             />
+
+            {showTopicError && (
+              <p id="ap-topic-error" role="alert" className="dx-assist-status bad !mt-2">
+                {topicError}
+              </p>
+            )}
 
             <p className="dx-assist-note !mt-2">
               Autopilot also uses what the assistant remembers about your
@@ -258,6 +415,16 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
             <label className="dx-check mt-4">
               <input
                 type="checkbox"
+                checked={reviewFirst}
+                onChange={(event) => setReviewFirst(event.target.checked)}
+                disabled={running || reviewing}
+              />
+              <span>Let me review and edit the post before it goes out</span>
+            </label>
+
+            <label className="dx-check mt-4">
+              <input
+                type="checkbox"
                 checked={allowed}
                 onChange={(event) => setAllowed(event.target.checked)}
                 disabled={running}
@@ -273,7 +440,7 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
               <button
                 type="button"
                 className="dx-btn ap-go"
-                onClick={run}
+                onClick={() => run(0)}
                 disabled={!ready}
               >
                 {running ? "Autopilot is working..." : "✨ Create and post"}
@@ -328,6 +495,16 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
                     <p className="ap-step-note">
                       {steps[index].note || step.hint}
                     </p>
+                    {failedStep === index && !running && (
+                      <button
+                        type="button"
+                        className="dx-btn-ghost ap-retry"
+                        onClick={() => run(index)}
+                        disabled={!ready}
+                      >
+                        Retry this step
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -339,6 +516,95 @@ export default function Autopilot({ facebookConnected, pageName, onDone }) {
             )}
           </div>
         </div>
+
+        {reviewing && (
+          <div className="ap-review">
+            <p className="ap-review-title">Review your post</p>
+
+            <label className="dx-label text-sm" htmlFor="ap-review-text">
+              Post text (caption, description and hashtags)
+            </label>
+            <textarea
+              id="ap-review-text"
+              className="dx-input resize-y"
+              rows={8}
+              value={draftText}
+              maxLength={5000}
+              onChange={(event) => {
+                setDraftText(event.target.value);
+                setReviewError("");
+              }}
+            />
+
+            <p className="dx-label text-sm">Picture</p>
+            <div className="ap-review-picture">
+              {draftPreview ? (
+                <img src={draftPreview} alt="Picture for your post" className="ap-result-image" />
+              ) : (
+                <p className="dx-assist-note !mt-0">This post has no picture.</p>
+              )}
+
+              <div className="sp-edit-picture">
+                <label className="dx-btn-ghost dx-btn-sm sp-edit-file">
+                  Upload your own picture
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+
+                      if (file) {
+                        setDraftImage(file);
+                        setReviewError("");
+                      }
+
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="dx-btn-ghost dx-btn-sm"
+                  onClick={makeNewPicture}
+                  disabled={regenerating}
+                >
+                  {regenerating ? "Creating a new picture..." : "Create a new AI picture"}
+                </button>
+                {draftImage && (
+                  <button
+                    type="button"
+                    className="dx-btn-ghost dx-btn-sm"
+                    onClick={() => setDraftImage(null)}
+                    disabled={regenerating}
+                  >
+                    Remove the picture
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {reviewError && (
+              <p role="alert" className="dx-assist-status bad">
+                {reviewError}
+              </p>
+            )}
+
+            <div className="sp-edit-actions">
+              <button
+                type="button"
+                className="dx-btn ap-go"
+                onClick={continueAfterReview}
+                disabled={regenerating || !facebookConnected}
+              >
+                {mode === "now" ? "Looks good, post now" : "Looks good, schedule it"}
+              </button>
+              <button type="button" className="dx-btn-ghost" onClick={discardReview} disabled={regenerating}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {result && (
           <div className="ap-result">

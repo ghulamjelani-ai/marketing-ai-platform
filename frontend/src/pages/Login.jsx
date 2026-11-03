@@ -1,46 +1,68 @@
-import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useRef, useState } from "react";
+import { useAuth } from "../context/useAuth";
 import AuthLayout from "../components/AuthLayout";
+import PasswordInput from "../components/PasswordInput";
+import { friendlyAuthError, validateLogin } from "../utils/authErrors";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, googleLogin } = useAuth();
+  const location = useLocation();
+  const { login, googleLogin, signInError } = useAuth();
 
-  const [email, setEmail] = useState("");
+  // Coming from "Log in" on the sign-up page keeps the email that was typed there.
+  const [email, setEmail] = useState(location.state?.email || "");
   const [password, setPassword] = useState("");
 
-  const [error, setError] = useState("");
+  const [error, setError] = useState(signInError ? friendlyAuthError(signInError) : "");
+  // After a password reset: "Your password has been changed..."
+  const notice = location.state?.notice || "";
   const [loading, setLoading] = useState(false);
+  const busyRef = useRef(false);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (busyRef.current) return;
+
+    const problem = validateLogin({ email, password });
+
+    if (problem) {
+      setError(problem);
+      return;
+    }
+
+    busyRef.current = true;
 
     try {
       setError("");
       setLoading(true);
 
-      await login(email, password);
+      const { otpRequired } = await login(email.trim(), password);
 
-      navigate("/home");
+      if (!otpRequired) navigate("/home");
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(friendlyAuthError(err));
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     try {
       setError("");
       setLoading(true);
 
-      await googleLogin();
+      const { otpRequired } = await googleLogin();
 
-      navigate("/home");
+      if (!otpRequired) navigate("/home");
     } catch (err) {
-      setError(err.message || "Google login failed");
+      setError(friendlyAuthError(err));
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
@@ -48,6 +70,7 @@ export default function Login() {
   return (
     <AuthLayout
       title="Welcome back"
+      notice={notice}
       error={error}
       subtitle={
         <>
@@ -55,7 +78,7 @@ export default function Login() {
         </>
       }
     >
-      <form onSubmit={handleLogin} className="au-form">
+      <form onSubmit={handleLogin} className="au-form" noValidate>
         <input
           type="email"
           placeholder="Email Address"
@@ -65,14 +88,16 @@ export default function Login() {
           required
         />
 
-        <input
-          type="password"
+        <PasswordInput
           placeholder="Password"
-          className="au-input"
+          autoComplete="current-password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
+          onChange={(event) => setPassword(event.target.value)}
         />
+
+        <Link to="/forgot-password" state={{ email: email.trim() }} className="au-link au-forgot">
+          Forgot password?
+        </Link>
 
         <button type="submit" disabled={loading} className="au-btn">
           {loading ? "Logging in..." : "Login"}

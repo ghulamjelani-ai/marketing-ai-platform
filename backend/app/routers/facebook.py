@@ -20,11 +20,12 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core import facebook_api
-from app.core.facebook_api import FacebookError
+from app.core import facebook_api, notify
+from app.core.errors import ApiError
+from app.core.facebook_api import FacebookError, explain
 from app.core.secure import decrypt_text, encrypt_text
 from app.db.database import get_db
-from app.models.models import FacebookConnection, PublishedPost, User
+from app.models.models import FacebookConnection, FacebookPage, PublishedPost, User
 from app.routers.auth import get_current_db_user
 
 load_dotenv()
@@ -144,6 +145,25 @@ def get_user_connection(db: Session, user_id: uuid.UUID):
     return row, token
 
 
+def token_for_post(db: Session, user_id: uuid.UUID, facebook_post_id: str | None) -> str | None:
+    """The token of the Page a post belongs to. Post ids look like "PAGEID_POSTID", so a
+    post made on another of the user's Pages still works after they switched Pages."""
+
+    page_id = (facebook_post_id or "").split("_")[0]
+
+    if page_id:
+        page = (
+            db.query(FacebookPage)
+            .filter(FacebookPage.user_id == user_id, FacebookPage.page_id == page_id)
+            .first()
+        )
+
+        if page:
+            return decrypt_text(page.token_encrypted)
+
+    return get_user_connection(db, user_id)[1]
+
+
 def require_connection(db: Session, user: User):
     row, token = get_user_connection(db, user.id)
 
@@ -177,10 +197,9 @@ def record_published_post(
 
 
 def raise_http(error: FacebookError):
-    raise HTTPException(
-        status_code=error.status,
-        detail=error.detail,
-    )
+    status_code, code, message = explain(error)
+    print("Facebook call failed:", code, repr(error.detail)[:300])
+    raise ApiError(status_code, code, message)
 
 
 # =========================================================
@@ -378,32 +397,24 @@ def facebook_callback(
             ),
         )
 
-    # The first available Page is connected.
-    # A Page selection step can be added for accounts with many Pages.
+    # Keep every Page the person manages, so they can choose where to post.
+    usable = [p for p in pages if p.get("id") and p.get("access_token")]
 
-    page = pages[0]
-
-    page_id = page.get("id")
-    page_name = page.get("name")
-    page_access_token = page.get(
-        "access_token"
-    )
-
-    if not page_id:
+    if not usable:
         raise HTTPException(
             status_code=400,
-            detail="Facebook Page ID is missing",
+            detail="Facebook did not give access to any of your Pages. Please connect again and allow Page access.",
         )
 
-    if not page_access_token:
-        raise HTTPException(
-            status_code=400,
-            detail="Facebook Page access token is missing",
-        )
+    db.query(FacebookPage).filter(FacebookPage.user_id == user_id).delete()
 
-    # =====================================================
-    # SAVE THE CONNECTION FOR THIS USER (TOKEN ENCRYPTED)
-    # =====================================================
+    for item in usable:
+        db.add(FacebookPage(
+            user_id=user_id,
+            page_id=item["id"],
+            page_name=item.get("name"),
+            token_encrypted=encrypt_text(item["access_token"]),
+        ))
 
     row = (
         db.query(FacebookConnection)
@@ -411,25 +422,30 @@ def facebook_callback(
         .first()
     )
 
+    # Keep the Page chosen before if it is still available; otherwise start with the first.
+    page = next((p for p in usable if row and p["id"] == row.page_id), usable[0])
+    page_id = page["id"]
+    page_name = page.get("name")
+
     if row is None:
         row = FacebookConnection(
             user_id=user_id,
             page_id=page_id,
             page_name=page_name,
-            token_encrypted=encrypt_text(page_access_token),
+            token_encrypted=encrypt_text(page["access_token"]),
         )
         db.add(row)
     else:
         row.page_id = page_id
         row.page_name = page_name
-        row.token_encrypted = encrypt_text(page_access_token)
+        row.token_encrypted = encrypt_text(page["access_token"])
 
     db.commit()
 
-    print("FACEBOOK PAGE CONNECTED:", page_name, page_id)
+    print("FACEBOOK PAGES CONNECTED:", len(usable))
 
     return RedirectResponse(
-        url=f"{FRONTEND_URL}/home?facebook=connected"
+        url=f"{FRONTEND_URL}/home?facebook=connected&pages={len(usable)}"
     )
 
 
@@ -452,7 +468,68 @@ def facebook_status(
         "connected": connected,
         "page_id": row.page_id if connected else None,
         "page_name": row.page_name if connected else None,
+        "page_count": (
+            db.query(FacebookPage).filter(FacebookPage.user_id == user.id).count() if connected else 0
+        ),
     }
+
+
+class SelectPageRequest(BaseModel):
+    page_id: str
+
+
+@router.get("/pages")
+def list_pages(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+    """All Pages saved at connect time; `selected` marks the one posts go to."""
+
+    row, _ = get_user_connection(db, user.id)
+    pages = (
+        db.query(FacebookPage)
+        .filter(FacebookPage.user_id == user.id)
+        .order_by(FacebookPage.page_name)
+        .all()
+    )
+
+    return {
+        "success": True,
+        "pages": [
+            {"page_id": p.page_id, "page_name": p.page_name, "selected": bool(row and p.page_id == row.page_id)}
+            for p in pages
+        ],
+    }
+
+
+@router.post("/select-page")
+def select_page(
+    payload: SelectPageRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+    """Makes one of the user's own saved Pages the one new posts go to."""
+
+    page = (
+        db.query(FacebookPage)
+        .filter(FacebookPage.user_id == user.id, FacebookPage.page_id == payload.page_id)
+        .first()
+    )
+
+    if page is None:
+        raise ApiError(404, "PAGE_NOT_FOUND", "That Page is not connected to your account. Connect Facebook again.")
+
+    row = db.query(FacebookConnection).filter(FacebookConnection.user_id == user.id).first()
+
+    if row is None:
+        raise ApiError(400, "FB_NOT_CONNECTED", "Connect your Facebook Page first.")
+
+    row.page_id = page.page_id
+    row.page_name = page.page_name
+    row.token_encrypted = page.token_encrypted
+    db.commit()
+
+    return {"success": True, "page_id": page.page_id, "page_name": page.page_name}
 
 
 # =========================================================
@@ -491,6 +568,15 @@ def publish_to_facebook(
         message,
         False,
         result.get("id"),
+    )
+
+    notify.submit(
+        user.email,
+        "published",
+        user_id=user.id,
+        page_name=getattr(row, "page_name", None),
+        text=message,
+        post_id=result.get("id"),
     )
 
     return {
@@ -569,6 +655,16 @@ async def publish_photo_to_facebook(
         result.get("post_id") or result.get("id"),
     )
 
+    notify.submit(
+        user.email,
+        "published",
+        user_id=user.id,
+        page_name=getattr(row, "page_name", None),
+        text=message.strip(),
+        post_id=result.get("post_id") or result.get("id"),
+        with_image=True,
+    )
+
     return {
         "success": True,
         "message": "Photo published successfully",
@@ -590,6 +686,7 @@ def disconnect_facebook(
     db.query(FacebookConnection).filter(
         FacebookConnection.user_id == user.id
     ).delete()
+    db.query(FacebookPage).filter(FacebookPage.user_id == user.id).delete()
     db.commit()
 
     return {

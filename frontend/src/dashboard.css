@@ -292,3 +292,72 @@
 @media (prefers-reduced-motion: reduce) {
   .dx-rise, .dx-nav, .dx-bg-orb, .dx-hero::before, .dx-brand, .dx-gold-text, .dx-plus, .dx-msg, .dx-eyebrow::before { animation: none; }
 }
+
+/* "Posting to" Page chooser (components/PageSwitcher.jsx) */
+.dx-page-switch { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; opacity: 0.95; }
+.dx-page-switch span { color: color-mix(in srgb, var(--text) 65%, transparent); }
+.dx-page-switch select {
+  max-width: 14rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.dx-page-switch select option { color: #1d1215; }
+
+/* Section tabs and Facebook bar (components/DashboardLayout.jsx) */
+.dx-tabs {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.35rem;
+  margin-bottom: 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  scrollbar-width: none;
+}
+.dx-tabs::-webkit-scrollbar { display: none; }
+.dx-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.95rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--text) 70%, transparent);
+  transition: background 0.2s, color 0.2s;
+}
+.dx-tab:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.dx-tab.on { color: var(--text); background: color-mix(in srgb, var(--accent) 20%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.dx-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dx-tab-count {
+  min-width: 1.3rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  line-height: 1.3rem;
+  text-align: center;
+  background: var(--accent);
+  color: var(--bg);
+}
+.dx-fbbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.dx-fbbar-end { margin-left: auto; }
+.dx-shortcut { display: block; color: inherit; text-decoration: none; }
+.dx-shortcut:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

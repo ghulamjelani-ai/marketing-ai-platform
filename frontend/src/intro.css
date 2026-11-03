@@ -1,8 +1,15 @@
 /* Intro / welcome walkthrough (in- prefix). Uses theme variables from theme.css */
+/* The page is its own scroll box, so the gentle snap only applies here. */
 .in-page {
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
   overflow-x: hidden;
+  overflow-y: auto;
+  scroll-snap-type: y proximity;
+  scroll-behavior: smooth;
+  overscroll-behavior-y: contain;
+  outline: none;
   color: var(--text);
   font-family: Inter, system-ui, sans-serif;
   background:
@@ -22,14 +29,20 @@
 .in-brand { display: flex; align-items: center; gap: 10px; font-family: Georgia, serif; font-size: 1.25rem; font-weight: 700; }
 .in-top-actions { display: flex; align-items: center; gap: 10px; }
 
-.in-stage { position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 96px 20px 110px; }
+.in-stage { position: relative; z-index: 1; }
 .in-slide {
-  position: absolute; width: 100%; max-width: 1050px; padding: 0 20px; text-align: center;
-  opacity: 0; pointer-events: none; transform: translateX(60px);
-  transition: opacity 0.6s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative; min-height: 100vh; min-height: 100dvh; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  max-width: 1090px; margin: 0 auto; padding: 96px 40px 70px; text-align: center;
+  scroll-snap-align: start; scroll-margin-top: 0;
 }
-.in-slide.active { opacity: 1; pointer-events: auto; transform: none; position: relative; }
-.in-slide.past { transform: translateX(-60px); }
+/* each section's content rises into view the first time it is seen */
+.in-slide > * { opacity: 0; transform: translateY(36px); transition: opacity 0.7s, transform 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+.in-slide.seen > * { opacity: 1; transform: none; }
+.in-slide.seen > *:nth-child(2) { transition-delay: 0.08s; }
+.in-slide.seen > *:nth-child(3) { transition-delay: 0.16s; }
+.in-slide.seen > *:nth-child(4) { transition-delay: 0.24s; }
+.in-slide.seen > *:nth-child(5) { transition-delay: 0.32s; }
 
 .in-tag { display: inline-flex; align-items: center; gap: 8px; font-size: 0.7rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--accent); }
 .in-tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: dx-pulse 2s infinite; }
@@ -75,9 +88,9 @@
 .in-card-ic { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 22px; margin-bottom: 14px; background: linear-gradient(135deg, #9c2a3b, #7b1e2b); }
 .in-card h3 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 1.25rem; }
 .in-card p { margin: 0; color: color-mix(in srgb, var(--text) 66%, transparent); font-size: 0.88rem; line-height: 1.55; }
-.in-slide.active .in-card { animation: dx-rise 0.7s both; }
-.in-slide.active .in-card:nth-child(2) { animation-delay: 0.12s; }
-.in-slide.active .in-card:nth-child(3) { animation-delay: 0.24s; }
+.in-slide.seen .in-card { animation: dx-rise 0.7s 0.2s backwards; }
+.in-slide.seen .in-card:nth-child(2) { animation-delay: 0.32s; }
+.in-slide.seen .in-card:nth-child(3) { animation-delay: 0.44s; }
 
 /* how it works */
 .in-steps { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 40px; }
@@ -96,24 +109,33 @@
 .in-step b { display: block; font-size: 0.95rem; }
 .in-step small { color: color-mix(in srgb, var(--text) 62%, transparent); font-size: 0.82rem; }
 
-/* controls */
-.in-controls { position: fixed; bottom: 0; left: 0; right: 0; z-index: 20; display: flex; align-items: center; justify-content: center; gap: 22px; padding: 18px; background: linear-gradient(transparent, var(--bg) 60%); }
-.in-dots { display: flex; gap: 8px; }
-.in-dot { width: 26px; height: 4px; border-radius: 4px; border: 0; padding: 0; cursor: pointer; background: color-mix(in srgb, var(--accent) 25%, transparent); transition: width 0.4s, background 0.4s; }
-.in-dot.on { width: 46px; background: var(--accent); }
-.in-skip { position: fixed; right: 24px; bottom: 26px; z-index: 21; background: none; border: 0; color: color-mix(in srgb, var(--text) 45%, transparent); cursor: pointer; font-size: 0.8rem; }
-.in-skip:hover { color: var(--text); }
+/* "Scroll" cue at the bottom of the first section */
+.in-scroll-cue {
+  position: absolute; left: 50%; bottom: 22px; margin-left: -40px; width: 80px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: none; border: 0; cursor: pointer; font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+}
+.in-slide.seen > .in-scroll-cue { transform: none; }
+.in-scroll-cue:hover { color: var(--text); }
+.in-mouse { position: relative; width: 22px; height: 34px; border-radius: 12px; border: 2px solid currentColor; }
+.in-mouse::after {
+  content: ""; position: absolute; left: 50%; top: 6px; width: 4px; height: 7px; margin-left: -2px; border-radius: 2px;
+  background: currentColor; animation: in-wheel 1.6s ease-in-out infinite;
+}
+@keyframes in-wheel { 0% { opacity: 0; transform: translateY(-2px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(9px); } }
 
 @media (max-width: 800px) {
   .in-grid3 { grid-template-columns: 1fr; }
   .in-steps { grid-template-columns: 1fr 1fr; row-gap: 26px; }
   .in-step::after { display: none; }
-  .in-slide { position: relative; display: none; }
-  .in-slide.active { display: block; }
-  .in-stage { align-items: flex-start; }
-  .in-skip { display: none; }
+  .in-slide { padding: 88px 20px 64px; }
+}
+@media (max-height: 640px) {
+  .in-scroll-cue { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .in-slide, .in-dot, .in-card { transition: none; }
-  .in-btn::after, .in-ring, .in-sat span, .in-core, .in-tag::before, .in-slide.active .in-num, .in-slide.active .in-card, .in-step::after { animation: none; }
+  .in-page { scroll-behavior: auto; }
+  .in-slide > *, .in-card { transition: none; }
+  .in-btn::after, .in-ring, .in-sat span, .in-core, .in-tag::before, .in-slide.active .in-num, .in-slide.seen .in-card, .in-step::after, .in-mouse::after { animation: none; }
 }
