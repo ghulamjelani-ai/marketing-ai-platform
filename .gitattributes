@@ -1,0 +1,15 @@
+# Normalize line endings: store text as LF in the repo, check out native on Windows.
+* text=auto eol=lf
+
+# Keep shell scripts LF so they run on Linux/CI.
+*.sh text eol=lf
+
+# Treat binary assets as binary (no line-ending conversion, no diff noise).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
